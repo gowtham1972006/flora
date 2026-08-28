@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScreenType } from '../types';
+import type { UserProfile } from '../types';
 import {
   ArrowLeft,
   Bell,
@@ -17,6 +18,7 @@ interface NavigationProps {
   unreadNotifsCount: number;
   onOpenNotifications: () => void;
   onOpenCareSchedule: () => void;
+  profile?: UserProfile | null;
 }
 
 export const TopAppBar: React.FC<{
@@ -25,14 +27,14 @@ export const TopAppBar: React.FC<{
   onBack?: () => void;
   showNotif?: boolean;
   unreadCount?: number;
-  onOpenNotif?: () => void;
+  onOpenNotifications?: () => void;   // fixed: was onOpenNotif
 }> = ({
   title = 'FloraVeda',
   showBack = false,
   onBack,
   showNotif = true,
   unreadCount = 0,
-  onOpenNotif,
+  onOpenNotifications,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#f8faf7]/95 backdrop-blur-md border-b border-[#e1e3e0]/60 h-16 flex items-center justify-between px-4 sm:px-6 transition-all duration-200">
@@ -64,7 +66,7 @@ export const TopAppBar: React.FC<{
       <div className="flex items-center gap-2">
         {showNotif ? (
           <button
-            onClick={onOpenNotif}
+            onClick={onOpenNotifications}
             aria-label="Notifications"
             className="relative w-10 h-10 flex items-center justify-center rounded-full text-[#4c6635] hover:bg-[#e7e9e6] active:scale-95 transition-all duration-150 cursor-pointer"
           >
@@ -142,7 +144,11 @@ export const DesktopSidebar: React.FC<NavigationProps> = ({
   unreadNotifsCount,
   onOpenNotifications,
   onOpenCareSchedule,
+  profile,
 }) => {
+  const displayName = profile?.name ?? 'Plant Lover';
+  const displayRole = profile?.role ?? 'Plant Enthusiast';
+  const displayAvatar = profile?.avatar ?? `https://api.dicebear.com/7.x/thumbs/svg?seed=default`;
   return (
     <aside className="hidden md:flex flex-col sticky top-0 h-screen w-72 bg-[#ffffff] border-r border-[#e1e3e0] p-6 z-30 shadow-sm shrink-0">
       {/* Brand Header */}
@@ -164,13 +170,13 @@ export const DesktopSidebar: React.FC<NavigationProps> = ({
         className="flex items-center gap-3 p-3 mb-6 bg-[#f2f4f1] hover:bg-[#e7e9e6] rounded-2xl cursor-pointer transition-colors"
       >
         <img
-          src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80"
-          alt="Aisha Koritum"
+          src={displayAvatar}
+          alt={displayName}
           className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-sm"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-[#191c1b] truncate">Aisha Koritum</p>
-          <p className="text-xs text-[#4c6635] font-medium">Urban Gardener</p>
+          <p className="text-sm font-semibold text-[#191c1b] truncate">{displayName}</p>
+          <p className="text-xs text-[#4c6635] font-medium">{displayRole}</p>
         </div>
       </div>
 

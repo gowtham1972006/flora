@@ -1,645 +1,623 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DiseaseItem, ScreenType } from '../types';
-import { sampleDiseases } from '../data/plantData';
+import { diagnoseImage } from '../lib/diagnosis';
 import {
-  X,
-  HelpCircle,
-  Image as ImageIcon,
-  Zap,
-  ZapOff,
-  Scan,
-  RefreshCw,
-  Sparkles,
-  Camera,
-  SwitchCamera,
-  AlertCircle,
-  Focus,
-  Sun,
-  ShieldCheck,
-  RotateCcw,
+  X, Image as ImageIcon, Zap, ZapOff, SwitchCamera,
+  AlertCircle, RefreshCw, ChevronRight, Check,
+  FlaskConical, Leaf, RotateCcw, Loader2,
 } from 'lucide-react';
-import { NoPlantModal } from './NoPlantModal';
-import { ScanResultModal } from './ScanResultModal';
 
 interface ScanCameraProps {
   setScreen: (screen: ScreenType) => void;
   onDiagnose: (disease: DiseaseItem) => void;
+  userId?: string | null;
 }
 
-export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose }) => {
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStepText, setScanStepText] = useState('Position leaf in frame');
-  const [flashMode, setFlashMode] = useState<'auto' | 'on' | 'off'>('auto');
-  const [, setTorchActive] = useState(false);
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
-  const [cameraStatus, setCameraStatus] = useState<'requesting' | 'active' | 'denied' | 'unsupported'>('requesting');
-  const [cameraErrorMsg, setCameraErrorMsg] = useState<string>('');
-  const [showNoPlantModal, setShowNoPlantModal] = useState(false);
-  const [activeResultDisease, setActiveResultDisease] = useState<DiseaseItem | null>(null);
-  const [customImage, setCustomImage] = useState<string | null>(null);
-  const [capturedSnapshot, setCapturedSnapshot] = useState<string | null>(null);
-  const [showHelpModal, setShowHelpModal] = useState(false);
+type ScanPhase = 'idle' | 'scanning' | 'done' | 'error';
+type CameraState = 'requesting' | 'active' | 'denied' | 'unsupported';
+
+// Scan step messages shown while AI runs
+const SCAN_STEPS = [
+  'Detecting leaf structure…',
+  'Analysing chlorophyll patterns…',
+  'Cross-referencing disease database…',
+  'Generating diagnosis report…',
+];
+
+// Severity badge colors
+const SEVERITY_COLOR: Record<string, string> = {
+  High:   'bg-red-500/90 text-white',
+  Medium: 'bg-amber-400/90 text-[#191c1b]',
+  Low:    'bg-green-500/90 text-white',
+};
+
+export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, userId }) => {
+  // ── Camera state ────────────────────────────────────────────────────────────
+  const [cameraState, setCameraState]   = useState<CameraState>('requesting');
+  const [cameraError, setCameraError]   = useState('');
+  const [facingMode, setFacingMode]     = useState<'environment' | 'user'>('environment');
+  const [torchOn, setTorchOn]           = useState(false);
+  const [hasTorch, setHasTorch]         = useState(false);
+
+  // ── Image / capture state ───────────────────────────────────────────────────
+  const [uploadedImage, setUploadedImage]   = useState<string | null>(null);
+  const [capturedFrame, setCapturedFrame]   = useState<string | null>(null);
+
+  // ── Scan flow state ─────────────────────────────────────────────────────────
+  const [phase, setPhase]               = useState<ScanPhase>('idle');
+  const [stepIdx, setStepIdx]           = useState(0);
+  const [progress, setProgress]         = useState(0);   // 0-100
+  const [result, setResult]             = useState<DiseaseItem | null>(null);
+  const [scanError, setScanError]       = useState('');
+
+  // ── Shutter flash ───────────────────────────────────────────────────────────
   const [shutterFlash, setShutterFlash] = useState(false);
-  const [simulatedARBox, setSimulatedARBox] = useState({ x: 50, y: 48, visible: true, confidence: 94 });
 
+  // ── Refs ────────────────────────────────────────────────────────────────────
+  const videoRef    = useRef<HTMLVideoElement>(null);
+  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const streamRef   = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const stepTimers  = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Stop current active media stream tracks
-  const stopLiveStream = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop();
-        } catch {
-          // ignore
-        }
-      });
-      streamRef.current = null;
-    }
+  // ── Stop stream ─────────────────────────────────────────────────────────────
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
   }, []);
 
-  // Request & attach live camera
-  const startLiveCamera = useCallback(async (facing: 'environment' | 'user') => {
-    stopLiveStream();
-    setCameraStatus('requesting');
-    setCameraErrorMsg('');
+  // ── Start camera ────────────────────────────────────────────────────────────
+  const startCamera = useCallback(async (facing: 'environment' | 'user') => {
+    stopStream();
+    setCameraState('requesting');
+    setCameraError('');
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraStatus('unsupported');
-      setCameraErrorMsg('Camera API is not supported in this browser or environment.');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState('unsupported');
+      setCameraError('Camera API not supported in this browser.');
       return;
     }
 
-    try {
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: facing,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      };
-
+    const tryStart = async (constraints: MediaStreamConstraints) => {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
-
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch(() => {});
-        };
+        await videoRef.current.play().catch(() => {});
       }
-      setCameraStatus('active');
-    } catch (err: any) {
-      console.warn('Live camera access error:', err);
-      // Fallback try with generic video constraint
-      try {
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        streamRef.current = fallbackStream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = fallbackStream;
-          videoRef.current.play().catch(() => {});
-        }
-        setCameraStatus('active');
-      } catch (fallbackErr: any) {
-        setCameraStatus('denied');
-        setCameraErrorMsg(
-          fallbackErr?.message || 'Camera permission was not granted or webcam is unavailable.'
-        );
-      }
-    }
-  }, [stopLiveStream]);
-
-  // Initial camera startup
-  useEffect(() => {
-    if (!customImage) {
-      startLiveCamera(facingMode);
-    } else {
-      stopLiveStream();
-    }
-
-    return () => {
-      stopLiveStream();
+      // Check torch support
+      const track = stream.getVideoTracks()[0];
+      const caps = track?.getCapabilities?.() as Record<string, unknown> | undefined;
+      setHasTorch(!!caps?.torch);
+      setCameraState('active');
     };
-  }, [customImage, facingMode, startLiveCamera, stopLiveStream]);
 
-  // Toggle Camera Facing Mode (Front / Back)
-  const toggleCameraFacing = () => {
-    const nextFacing = facingMode === 'environment' ? 'user' : 'environment';
-    setFacingMode(nextFacing);
-    if (!customImage) {
-      startLiveCamera(nextFacing);
-    }
-  };
-
-  // Toggle Hardware Torch / Screen Flash
-  const toggleTorch = async () => {
-    const nextFlashMode = flashMode === 'off' ? 'on' : flashMode === 'on' ? 'auto' : 'off';
-    setFlashMode(nextFlashMode);
-
-    if (streamRef.current) {
-      const track = streamRef.current.getVideoTracks()[0];
-      if (track && 'applyConstraints' in track) {
-        try {
-          const capabilities = (track.getCapabilities && track.getCapabilities()) || {};
-          if ('torch' in capabilities) {
-            const shouldTorch = nextFlashMode === 'on';
-            await (track as any).applyConstraints({
-              advanced: [{ torch: shouldTorch }],
-            });
-            setTorchActive(shouldTorch);
-          }
-        } catch {
-          // torch constraint not supported, fallback handled in UI
-        }
-      }
-    }
-  };
-
-  // Floating AR telemetry target box animation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!isScanning) {
-        setSimulatedARBox(() => ({
-          x: 48 + (Math.random() * 4 - 2),
-          y: 47 + (Math.random() * 4 - 2),
-          visible: true,
-          confidence: Math.floor(92 + Math.random() * 6),
-        }));
-      }
-    }, 2400);
-    return () => clearInterval(interval);
-  }, [isScanning]);
-
-  // Trigger Snapshot and AI Diagnosis
-  const handleCapture = () => {
-    if (isScanning) return;
-
-    // Trigger visual screen shutter flash
-    setShutterFlash(true);
-    setTimeout(() => setShutterFlash(false), 250);
-
-    // If live video active, grab snapshot frame to canvas
-    if (!customImage && videoRef.current && canvasRef.current && cameraStatus === 'active') {
+    try {
+      await tryStart({ video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    } catch {
       try {
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const frameUrl = canvas.toDataURL('image/jpeg', 0.85);
-          setCapturedSnapshot(frameUrl);
-        }
-      } catch (err) {
-        console.log('Canvas snapshot error:', err);
+        await tryStart({ video: true, audio: false });
+      } catch (err: unknown) {
+        setCameraState('denied');
+        setCameraError((err as Error)?.message ?? 'Camera access denied.');
       }
-    } else if (customImage) {
-      setCapturedSnapshot(customImage);
     }
+  }, [stopStream]);
 
-    setIsScanning(true);
-    setScanStepText('Analyzing leaf venation & chlorophyll...');
+  // Start on mount / when facing changes (unless showing an upload)
+  useEffect(() => {
+    if (!uploadedImage) startCamera(facingMode);
+    return stopStream;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadedImage, facingMode]);
 
-    setTimeout(() => {
-      setScanStepText('Cross-referencing 12,000+ pathogen profiles...');
-    }, 800);
+  // ── Toggle torch ────────────────────────────────────────────────────────────
+  const toggleTorch = useCallback(async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    const next = !torchOn;
+    try {
+      await (track as unknown as { applyConstraints(c: unknown): Promise<void> })
+        .applyConstraints({ advanced: [{ torch: next }] });
+      setTorchOn(next);
+    } catch { /* torch not available */ }
+  }, [torchOn]);
 
-    setTimeout(() => {
-      setScanStepText('Synthesizing botanical recovery protocol...');
-    }, 1500);
+  // ── Grab snapshot from video ─────────────────────────────────────────────────
+  const grabFrame = useCallback((): string | null => {
+    const video  = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return null;
+    canvas.width  = video.videoWidth  || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.92);
+  }, []);
 
-    setTimeout(() => {
-      setIsScanning(false);
-      setScanStepText('Position leaf in frame');
-
-      // Intelligent Live diagnosis response
-      const diagnosed = {
-        ...sampleDiseases.chlorosis,
-        confidenceScore: 96,
-      };
-      setActiveResultDisease(diagnosed);
-    }, 2200);
+  // ── Clear step timers ────────────────────────────────────────────────────────
+  const clearStepTimers = () => {
+    stepTimers.current.forEach(clearTimeout);
+    stepTimers.current = [];
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── Main scan trigger ────────────────────────────────────────────────────────
+  const handleScan = useCallback(async () => {
+    if (phase === 'scanning') return;
+
+    // Shutter flash
+    setShutterFlash(true);
+    setTimeout(() => setShutterFlash(false), 180);
+
+    // Capture frame
+    let imageData: string | null = null;
+    if (uploadedImage) {
+      imageData = uploadedImage;
+      setCapturedFrame(uploadedImage);
+    } else {
+      imageData = grabFrame();
+      if (imageData) setCapturedFrame(imageData);
+    }
+
+    if (!imageData) {
+      setScanError('Could not capture image. Try uploading a photo instead.');
+      setPhase('error');
+      return;
+    }
+
+    // ── Animate scan steps ────────────────────────────────────────────────────
+    setPhase('scanning');
+    setResult(null);
+    setScanError('');
+    setStepIdx(0);
+    setProgress(0);
+
+    clearStepTimers();
+
+    // Step text advances every ~700 ms
+    SCAN_STEPS.forEach((_, i) => {
+      if (i === 0) return;
+      const t = setTimeout(() => setStepIdx(i), i * 700);
+      stepTimers.current.push(t);
+    });
+
+    // Progress bar fills over ~2.8 s
+    let p = 0;
+    const progressInterval = setInterval(() => {
+      p = Math.min(p + 2, 90);   // ramp to 90% while waiting
+      setProgress(p);
+    }, 60);
+
+    try {
+      const { disease } = await diagnoseImage(imageData, userId ?? 'anonymous');
+      clearInterval(progressInterval);
+      clearStepTimers();
+      setProgress(100);
+      setTimeout(() => {
+        setResult(disease);
+        setPhase('done');
+      }, 300);
+    } catch (err) {
+      clearInterval(progressInterval);
+      clearStepTimers();
+      setScanError((err as Error)?.message ?? 'Diagnosis failed. Please try again.');
+      setPhase('error');
+    }
+  }, [phase, uploadedImage, grabFrame, userId]);
+
+  // ── File upload ──────────────────────────────────────────────────────────────
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setCustomImage(event.target?.result as string);
-        stopLiveStream();
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      stopStream();
+      setUploadedImage(ev.target?.result as string);
+      setPhase('idle');
+      setResult(null);
+      setCapturedFrame(null);
+    };
+    reader.readAsDataURL(file);
+    // Reset input so the same file can be re-selected
+    e.target.value = '';
   };
 
-  const handleResetToLive = () => {
-    setCustomImage(null);
-    setCapturedSnapshot(null);
-    startLiveCamera(facingMode);
+  // ── Reset to live camera ─────────────────────────────────────────────────────
+  const resetToLive = () => {
+    setUploadedImage(null);
+    setCapturedFrame(null);
+    setPhase('idle');
+    setResult(null);
+    setScanError('');
+    setProgress(0);
+    startCamera(facingMode);
   };
+
+  // ── Navigate to full diagnosis detail ────────────────────────────────────────
+  const handleViewDiagnosis = () => {
+    if (!result) return;
+    onDiagnose(result);
+    setScreen('diagnosis');
+  };
+
+  // ── Active image source ──────────────────────────────────────────────────────
+  const activeImageSrc = phase === 'done' && capturedFrame
+    ? capturedFrame
+    : uploadedImage ?? null;
 
   return (
-    <div
-      id="scan-camera-viewport"
-      className="fixed inset-0 z-50 bg-[#0d140b] text-white flex flex-col justify-between overflow-hidden select-none"
-    >
-      {/* Hidden Snapshot Canvas */}
+    <div className="fixed inset-0 z-50 bg-black flex flex-col overflow-hidden select-none touch-none">
+      {/* Hidden helpers */}
       <canvas ref={canvasRef} className="hidden" />
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
 
-      {/* Screen Shutter Flash Effect */}
+      {/* ── Shutter flash ─────────────────────────────────────────────── */}
       {shutterFlash && (
-        <div className="absolute inset-0 z-50 bg-white opacity-80 pointer-events-none transition-opacity duration-200" />
+        <div className="absolute inset-0 z-[60] bg-white pointer-events-none animate-[fade-out_0.18s_ease-out_forwards]" />
       )}
 
-      {/* Viewport Layer */}
-      <div className="absolute inset-0 z-0 overflow-hidden bg-black flex items-center justify-center">
-        {!customImage ? (
-          cameraStatus === 'active' ? (
-            <video
-              ref={videoRef}
-              playsInline
-              autoPlay
-              muted
-              className="w-full h-full object-cover"
-            />
-          ) : cameraStatus === 'requesting' ? (
-            <div className="flex flex-col items-center justify-center text-center p-6 space-y-4 max-w-xs">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-full border-3 border-[#8ba870]/30 border-t-[#cdecae] animate-spin flex items-center justify-center" />
-                <Camera className="w-7 h-7 text-[#cdecae] absolute inset-0 m-auto" />
-              </div>
-              <div>
-                <p className="font-semibold text-sm text-white">Initializing Live Camera...</p>
-                <p className="text-xs text-white/60 mt-1">Connecting to video feed</p>
-              </div>
-            </div>
-          ) : (
-            // Permission Denied or Unavailable View
-            <div className="flex flex-col items-center justify-center text-center p-6 space-y-4 max-w-sm bg-black/80 rounded-3xl mx-4 border border-white/10 backdrop-blur-md">
-              <div className="w-14 h-14 rounded-full bg-[#ba1a1a]/20 text-[#ffdad6] flex items-center justify-center">
-                <AlertCircle className="w-7 h-7" />
-              </div>
-              <div>
-                <h3 className="font-bold text-base text-white">Live Camera Unavailable</h3>
-                <p className="text-xs text-white/70 mt-1.5 leading-relaxed">
-                  {cameraErrorMsg || 'Please allow camera access in your browser or select a plant photo from your gallery.'}
-                </p>
-              </div>
-              <div className="flex flex-col w-full gap-2 pt-2">
-                <button
-                  onClick={() => startLiveCamera(facingMode)}
-                  className="w-full py-2.5 bg-[#4c6635] hover:bg-[#354e1f] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Retry Camera Access</span>
-                </button>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>Upload Plant Photo</span>
-                </button>
-              </div>
-            </div>
-          )
-        ) : (
+      {/* ════════════════════════════════════════════════════════════════
+          CAMERA / IMAGE VIEWPORT  (full screen background)
+          ════════════════════════════════════════════════════════════════ */}
+      <div className="absolute inset-0 bg-black">
+        {/* Live video — always mounted so stream doesn't restart unnecessarily */}
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          autoPlay
+          className={`w-full h-full object-cover ${activeImageSrc || phase === 'done' ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+        />
+
+        {/* Uploaded / captured image overlay */}
+        {activeImageSrc && (
           <img
-            src={customImage}
-            alt="Uploaded leaf specimen"
-            className="w-full h-full object-cover transition-all duration-300"
+            src={activeImageSrc}
+            alt="Scan target"
+            className="absolute inset-0 w-full h-full object-cover"
           />
         )}
 
-        {/* Ambient Botanical Lens Vignette */}
-        <div className="absolute inset-0 bg-radial from-transparent via-black/20 to-black/60 pointer-events-none" />
+        {/* Camera requesting state */}
+        {!uploadedImage && cameraState === 'requesting' && (
+          <div className="absolute inset-0 bg-[#0a0f08] flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 text-white/70">
+              <Loader2 className="w-8 h-8 animate-spin text-[#8ba870]" />
+              <p className="text-sm font-medium">Starting camera…</p>
+            </div>
+          </div>
+        )}
+
+        {/* Camera denied / unsupported state */}
+        {!uploadedImage && (cameraState === 'denied' || cameraState === 'unsupported') && (
+          <div className="absolute inset-0 bg-[#0a0f08] flex items-center justify-center p-6">
+            <div className="bg-white/10 backdrop-blur-xl border border-white/15 rounded-3xl p-6 max-w-xs w-full text-center space-y-4">
+              <div className="w-14 h-14 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-7 h-7 text-red-400" />
+              </div>
+              <div>
+                <p className="font-bold text-white text-base">Camera Unavailable</p>
+                <p className="text-xs text-white/60 mt-1 leading-relaxed">
+                  {cameraError || 'Allow camera access in browser settings, or upload a photo.'}
+                </p>
+              </div>
+              <button
+                onClick={() => startCamera(facingMode)}
+                className="w-full py-3 bg-[#4c6635] hover:bg-[#3d5229] text-white rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" /> Retry
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-3 bg-white/10 hover:bg-white/15 text-white rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                <ImageIcon className="w-4 h-4" /> Upload Photo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Subtle dark vignette around edges */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_50%,rgba(0,0,0,0.55)_100%)] pointer-events-none" />
       </div>
 
-      {/* Top Header Bar */}
-      <header className="relative z-20 flex justify-between items-center px-5 h-16 bg-gradient-to-b from-black/85 via-black/40 to-transparent">
+      {/* ════════════════════════════════════════════════════════════════
+          TOP BAR
+          ════════════════════════════════════════════════════════════════ */}
+      <header className="relative z-20 flex items-center justify-between px-4 pt-12 pb-4 bg-gradient-to-b from-black/70 to-transparent">
+        {/* Close */}
         <button
           onClick={() => setScreen('home')}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60 active:scale-95 transition-all cursor-pointer border border-white/10"
-          aria-label="Close scanner"
+          className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/15 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
 
-        {/* Live Status Header */}
-        <div className="flex flex-col items-center">
-          <div className="flex items-center gap-1.5">
-            {!customImage && cameraStatus === 'active' && (
-              <span className="w-2 h-2 rounded-full bg-[#52ff00] animate-ping" />
-            )}
-            <h1 className="font-bold text-base text-white tracking-tight drop-shadow-md">
-              FloraVeda AI Scan
-            </h1>
-          </div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-[#8ba870]/30 text-[#cdecae] border border-[#8ba870]/40">
-              {!customImage
-                ? cameraStatus === 'active'
-                  ? 'Live Camera Active'
-                  : 'Live Vision'
-                : 'Gallery Photo'}
-            </span>
-          </div>
+        {/* Title pill */}
+        <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/15 rounded-full px-4 py-2">
+          <Leaf className="w-4 h-4 text-[#8ba870]" />
+          <span className="text-white text-sm font-bold tracking-wide">Plant Scanner</span>
+          {!uploadedImage && cameraState === 'active' && (
+            <span className="w-2 h-2 rounded-full bg-[#52ff00] animate-pulse" />
+          )}
         </div>
 
-        <button
-          onClick={() => setShowHelpModal(true)}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60 active:scale-95 transition-all cursor-pointer border border-white/10"
-          aria-label="Scan instructions"
-        >
-          <HelpCircle className="w-5 h-5" />
-        </button>
-      </header>
-
-      {/* Live HUD Telemetry Strip & Return to Live Option */}
-      <div className="relative z-20 flex flex-col items-center px-4 gap-2">
-        {customImage ? (
+        {/* Torch (only when live camera active and torch supported) */}
+        {!uploadedImage && cameraState === 'active' && hasTorch ? (
           <button
-            onClick={handleResetToLive}
-            className="bg-black/60 hover:bg-black/80 backdrop-blur-xl border border-white/20 px-3.5 py-1.5 rounded-full text-xs font-semibold text-[#cdecae] flex items-center gap-1.5 shadow-lg transition-all active:scale-95 cursor-pointer"
+            onClick={toggleTorch}
+            className={`w-10 h-10 rounded-full backdrop-blur-md border border-white/15 flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+              torchOn ? 'bg-[#cdecae] text-[#191c1b]' : 'bg-black/50 text-white'
+            }`}
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Switch back to Live Camera</span>
+            {torchOn ? <Zap className="w-5 h-5 fill-current" /> : <ZapOff className="w-5 h-5" />}
           </button>
         ) : (
-          <div className="flex items-center gap-2 text-[11px] text-white/90">
-            <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5">
-              <Focus className="w-3 h-3 text-[#cdecae]" />
-              <span>Continuous AF</span>
-            </div>
-            <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5">
-              <Sun className="w-3 h-3 text-[#f0e371]" />
-              <span>Lux: Optimal</span>
-            </div>
-            <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5">
-              <ShieldCheck className="w-3 h-3 text-[#cdecae]" />
-              <span>FloraAI v4.8</span>
-            </div>
-          </div>
+          <div className="w-10" />
         )}
-      </div>
+      </header>
 
-      {/* Main Reticle Framing Guide */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-2">
-        <div className="relative w-full max-w-[310px] aspect-[3/4]">
-          {/* Transparent cutout border with darkened outer vignette */}
-          <div className="absolute inset-0 rounded-3xl border border-white/30 overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.52)]">
-            {/* Animated Laser Scanning Line */}
+      {/* ════════════════════════════════════════════════════════════════
+          VIEWFINDER  (the scanning frame)
+          ════════════════════════════════════════════════════════════════ */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-8">
+        {/* The frame itself */}
+        <div className="relative w-full max-w-[300px] aspect-[3/4]">
+
+          {/* Dark surround outside the frame */}
+          <div className="absolute inset-0 rounded-[28px] shadow-[0_0_0_9999px_rgba(0,0,0,0.48)] pointer-events-none" />
+
+          {/* Frame border */}
+          <div className={`absolute inset-0 rounded-[28px] border-2 transition-colors duration-500 ${
+            phase === 'scanning' ? 'border-[#cdecae]/80' :
+            phase === 'done'     ? 'border-[#52ff00]/90' :
+            phase === 'error'    ? 'border-red-400/80'   :
+                                   'border-white/25'
+          }`} />
+
+          {/* Corner reticles */}
+          {(['tl','tr','bl','br'] as const).map(c => (
             <div
-              className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#cdecae] to-transparent shadow-[0_0_16px_#cdecae] ${
-                isScanning ? 'animate-scan-fast duration-700' : 'animate-scan'
-              }`}
+              key={c}
+              className={`absolute w-7 h-7 animate-corner-glow ${
+                phase === 'done' ? 'border-[#52ff00]' : 'border-[#cdecae]'
+              } ${c === 'tl' ? 'top-0 left-0 border-t-[3px] border-l-[3px] rounded-tl-[28px]' :
+                  c === 'tr' ? 'top-0 right-0 border-t-[3px] border-r-[3px] rounded-tr-[28px]' :
+                  c === 'bl' ? 'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-[28px]' :
+                               'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-[28px]'}`}
             />
-          </div>
+          ))}
 
-          {/* Precision Corner Reticles */}
-          <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-[#cdecae] rounded-tl-2xl shadow-sm" />
-          <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-[#cdecae] rounded-tr-2xl shadow-sm" />
-          <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-[#cdecae] rounded-bl-2xl shadow-sm" />
-          <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-[#cdecae] rounded-br-2xl shadow-sm" />
+          {/* ── Scan line (only while scanning) ──────────────────────── */}
+          {phase === 'scanning' && (
+            <div className="absolute inset-0 overflow-hidden rounded-[28px] pointer-events-none">
+              <div className="absolute left-0 right-0 h-[3px] animate-scan-fast
+                bg-gradient-to-r from-transparent via-[#cdecae] to-transparent
+                shadow-[0_0_18px_4px_rgba(205,236,174,0.7)]" />
+            </div>
+          )}
 
-          {/* Floating AR Target Box (When not scanning) */}
-          {!isScanning && (
-            <div
-              className="absolute pointer-events-none transition-all duration-700 ease-out"
-              style={{
-                top: `${simulatedARBox.y}%`,
-                left: `${simulatedARBox.x}%`,
-                transform: 'translate(-50%, -50%)',
-              }}
-            >
-              <div className="w-36 h-36 border border-[#cdecae]/60 rounded-2xl flex flex-col justify-between p-2 animate-pulse bg-[#8ba870]/10 backdrop-blur-xs">
-                <div className="flex justify-between items-start">
-                  <span className="text-[9px] font-mono font-bold bg-[#4c6635]/90 text-[#cdecae] px-1.5 py-0.5 rounded">
-                    LEAF_DETECT
-                  </span>
-                  <span className="text-[9px] font-mono text-white/90">
-                    {simulatedARBox.confidence}%
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[8px] text-white/80">
-                  <span>Chlorophyll Index</span>
-                  <span className="text-[#cdecae] font-bold">OPTIMAL</span>
-                </div>
+          {/* ── Done: checkmark overlay ───────────────────────────────── */}
+          {phase === 'done' && (
+            <div className="absolute inset-0 rounded-[28px] flex items-center justify-center pointer-events-none">
+              <div className="w-16 h-16 rounded-full bg-[#52ff00]/20 border-2 border-[#52ff00] flex items-center justify-center animate-fade-in-up">
+                <Check className="w-8 h-8 text-[#52ff00]" strokeWidth={3} />
               </div>
             </div>
           )}
 
-          {/* Center Scan Focus Indicator & Live Feedback */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            {isScanning ? (
-              <div className="flex flex-col items-center animate-fade-in">
-                <div className="relative mb-3">
-                  <div className="w-16 h-16 rounded-full border-3 border-[#cdecae]/30 border-t-[#cdecae] animate-spin flex items-center justify-center shadow-lg" />
-                  <Sparkles className="w-7 h-7 text-[#cdecae] absolute inset-0 m-auto animate-pulse" />
-                </div>
-                <div className="bg-black/75 backdrop-blur-md px-4 py-2 rounded-2xl text-xs font-semibold text-white flex items-center gap-2 border border-[#cdecae]/40 shadow-2xl">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#cdecae]" />
-                  <span>{scanStepText}</span>
-                </div>
+          {/* ── Error overlay ─────────────────────────────────────────── */}
+          {phase === 'error' && (
+            <div className="absolute inset-0 rounded-[28px] flex items-center justify-center pointer-events-none">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 border-2 border-red-400 flex items-center justify-center animate-fade-in-up">
+                <AlertCircle className="w-8 h-8 text-red-400" />
               </div>
-            ) : (
-              <div className="flex flex-col items-center opacity-85">
-                <Scan className="w-10 h-10 text-[#cdecae] animate-pulse mb-2" />
-                <div className="bg-black/55 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-white/90 border border-white/15">
-                  Center leaf in crosshairs
+            </div>
+          )}
+
+          {/* ── Idle: floating hint ───────────────────────────────────── */}
+          {phase === 'idle' && (cameraState === 'active' || uploadedImage) && (
+            <div className="absolute inset-0 flex flex-col items-center justify-end pb-5 pointer-events-none">
+              <div className="bg-black/50 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/15">
+                <p className="text-[11px] text-white/80 font-medium tracking-wide">
+                  Centre the leaf · tap scan
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Progress bar (while scanning) ──────────────────────────── */}
+        {phase === 'scanning' && (
+          <div className="mt-6 w-full max-w-[300px] space-y-2 animate-fade-in-up">
+            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-[#8ba870] to-[#cdecae] rounded-full transition-all duration-200 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-center text-xs text-white/70 font-medium">
+              {SCAN_STEPS[stepIdx]}
+            </p>
+          </div>
+        )}
+
+        {/* ── Error text ──────────────────────────────────────────────── */}
+        {phase === 'error' && (
+          <div className="mt-5 bg-red-900/50 backdrop-blur-md rounded-2xl px-4 py-3 max-w-[300px] w-full animate-fade-in-up">
+            <p className="text-xs text-red-300 text-center leading-relaxed">{scanError}</p>
+            <button
+              onClick={resetToLive}
+              className="mt-2 w-full text-xs text-white/70 underline underline-offset-2 cursor-pointer"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════
+          RESULT CARD  (slides up after scan completes)
+          ════════════════════════════════════════════════════════════════ */}
+      {phase === 'done' && result && (
+        <div className="relative z-20 animate-result-slide-up">
+          <div className="bg-[#0f1a0c]/95 backdrop-blur-xl border-t border-white/10 rounded-t-[32px] px-5 pt-5 pb-8">
+            {/* Drag handle */}
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+
+            {/* Result row */}
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 border border-white/10">
+                <img
+                  src={capturedFrame ?? result.image}
+                  alt={result.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${SEVERITY_COLOR[result.severity] ?? 'bg-white/20 text-white'}`}>
+                    {result.severity} Risk
+                  </span>
+                  <span className="text-[10px] font-semibold text-[#cdecae]">
+                    {result.confidenceScore ?? 92}% match
+                  </span>
+                </div>
+                <h3 className="font-bold text-white text-base leading-tight truncate">{result.name}</h3>
+                <p className="text-xs text-white/55 truncate mt-0.5">{result.commonName}</p>
+              </div>
+            </div>
+
+            {/* Top cause */}
+            {result.causes[0] && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-start gap-3 mb-4">
+                <FlaskConical className="w-4 h-4 text-[#8ba870] shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-white/80">{result.causes[0].title}</p>
+                  <p className="text-[11px] text-white/50 mt-0.5 leading-relaxed">{result.causes[0].subtitle}</p>
                 </div>
               </div>
             )}
+
+            {/* Action buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={resetToLive}
+                className="flex-1 py-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95"
+              >
+                <RotateCcw className="w-4 h-4" /> Scan Again
+              </button>
+              <button
+                onClick={handleViewDiagnosis}
+                className="flex-[2] py-3.5 rounded-2xl bg-[#4c6635] hover:bg-[#3d5229] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95 shadow-lg shadow-[#4c6635]/40"
+              >
+                View Full Report <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Framing Prompt */}
-        <p className="text-center text-xs text-white/80 mt-3 drop-shadow font-medium">
-          {isScanning
-            ? 'Running multi-spectral pathogen diagnostics...'
-            : 'Hold steady • FloraVeda automatically isolates infected leaf areas'}
-        </p>
-      </main>
+      {/* ════════════════════════════════════════════════════════════════
+          BOTTOM CONTROL BAR  (hidden when result is shown)
+          ════════════════════════════════════════════════════════════════ */}
+      {phase !== 'done' && (
+        <footer className="relative z-20 bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-6 pb-10 px-8">
+          <div className="flex items-center justify-between max-w-sm mx-auto">
 
-      {/* Bottom Glassmorphic Control Deck */}
-      <footer className="relative z-20 bg-gradient-to-t from-black via-black/80 to-black/40 backdrop-blur-2xl border-t border-white/15 rounded-t-[36px] px-6 pt-5 pb-9">
-        <div className="max-w-md mx-auto flex justify-between items-center px-4">
-          {/* Gallery / File Upload */}
-          <div className="flex flex-col items-center">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-13 h-13 rounded-full bg-white/15 hover:bg-white/25 active:scale-90 transition-all flex items-center justify-center border border-white/20 shadow-md cursor-pointer text-white"
-              aria-label="Upload photo from device gallery"
-            >
-              <ImageIcon className="w-5 h-5" />
-            </button>
-            <span className="text-[11px] font-medium text-white/90 mt-1.5">Gallery</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </div>
-
-          {/* Main Shutter Button with Capture Ring */}
-          <div className="flex flex-col items-center">
-            <button
-              onClick={handleCapture}
-              disabled={isScanning}
-              className="relative w-20 h-20 rounded-full border-4 border-white/50 flex items-center justify-center active:scale-95 transition-all shadow-[0_0_35px_rgba(205,236,174,0.4)] cursor-pointer group hover:border-[#cdecae]"
-              aria-label="Diagnose Leaf with AI"
-            >
-              <div
-                className={`w-16 h-16 rounded-full transition-all duration-300 flex items-center justify-center ${
-                  isScanning
-                    ? 'scale-90 bg-[#8ba870]'
-                    : 'bg-white group-hover:scale-105 group-active:scale-95 shadow-inner'
-                }`}
+            {/* ── Gallery button ──────────────────────────────────────── */}
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-12 h-12 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/15 backdrop-blur-md flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
+                aria-label="Upload from gallery"
               >
-                {isScanning ? (
-                  <RefreshCw className="w-7 h-7 animate-spin text-white" />
-                ) : (
-                  <div className="w-14 h-14 rounded-full border-2 border-[#4c6635]/30 flex items-center justify-center">
-                    <Sparkles className="w-6 h-6 text-[#4c6635]" />
-                  </div>
-                )}
-              </div>
-            </button>
-            <span className="text-xs font-bold text-[#cdecae] mt-1.5 tracking-wide">
-              {isScanning ? 'Diagnosing...' : 'Tap to Scan'}
-            </span>
-          </div>
+                <ImageIcon className="w-5 h-5" />
+              </button>
+              <span className="text-[10px] text-white/60 font-medium">Gallery</span>
+            </div>
 
-          {/* Flash / Camera Switch Control Group */}
-          <div className="flex flex-col items-center gap-2">
-            <div className="flex items-center gap-2">
-              {/* Flip camera button (when on live stream) */}
-              {!customImage && (
+            {/* ── Shutter button ──────────────────────────────────────── */}
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                onClick={handleScan}
+                disabled={phase === 'scanning' || (cameraState !== 'active' && !uploadedImage)}
+                aria-label="Scan plant"
+                className={`relative w-[76px] h-[76px] rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer
+                  ${phase === 'scanning'
+                    ? 'scale-95 cursor-not-allowed'
+                    : 'active:scale-90 hover:scale-105'
+                  }`}
+              >
+                {/* Outer ring */}
+                <div className={`absolute inset-0 rounded-full border-[3px] transition-colors duration-300 ${
+                  phase === 'scanning' ? 'border-[#cdecae]/60' : 'border-white/60'
+                }`} />
+
+                {/* Ripple when scanning */}
+                {phase === 'scanning' && (
+                  <>
+                    <div className="absolute inset-[-8px] rounded-full border border-[#cdecae]/30 animate-ripple" />
+                    <div className="absolute inset-[-16px] rounded-full border border-[#cdecae]/15 animate-ripple" style={{ animationDelay: '0.4s' }} />
+                  </>
+                )}
+
+                {/* Inner disc */}
+                <div className={`w-[60px] h-[60px] rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
+                  phase === 'scanning'
+                    ? 'bg-[#8ba870] scale-90'
+                    : 'bg-white hover:bg-[#f0f0f0]'
+                }`}>
+                  {phase === 'scanning'
+                    ? <Loader2 className="w-7 h-7 animate-spin text-white" />
+                    : <Leaf className="w-7 h-7 text-[#4c6635]" />
+                  }
+                </div>
+              </button>
+              <span className={`text-[11px] font-semibold transition-colors ${
+                phase === 'scanning' ? 'text-[#cdecae]' : 'text-white/80'
+              }`}>
+                {phase === 'scanning' ? 'Analysing…' : 'Scan'}
+              </span>
+            </div>
+
+            {/* ── Flip / Reset button ─────────────────────────────────── */}
+            <div className="flex flex-col items-center gap-1.5">
+              {uploadedImage ? (
                 <button
-                  onClick={toggleCameraFacing}
-                  className="w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 active:scale-90 transition-all flex items-center justify-center border border-white/20 shadow-md cursor-pointer text-white"
-                  title="Flip camera (Front / Rear)"
-                  aria-label="Switch camera"
+                  onClick={resetToLive}
+                  className="w-12 h-12 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/15 backdrop-blur-md flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
+                  aria-label="Back to live camera"
                 >
-                  <SwitchCamera className="w-4 h-4" />
+                  <RotateCcw className="w-5 h-5" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setFacingMode(f => f === 'environment' ? 'user' : 'environment')}
+                  className="w-12 h-12 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/15 backdrop-blur-md flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
+                  aria-label="Flip camera"
+                >
+                  <SwitchCamera className="w-5 h-5" />
                 </button>
               )}
-
-              {/* Torch / Flash mode toggle */}
-              <button
-                onClick={toggleTorch}
-                className={`w-12 h-12 rounded-full transition-all flex items-center justify-center border border-white/20 shadow-md cursor-pointer ${
-                  flashMode === 'on'
-                    ? 'bg-[#cdecae] text-[#191c1b]'
-                    : 'bg-white/15 hover:bg-white/25 text-white active:scale-90'
-                }`}
-                aria-label={`Flash mode ${flashMode}`}
-              >
-                {flashMode === 'off' ? (
-                  <ZapOff className="w-5 h-5" />
-                ) : (
-                  <Zap className={`w-5 h-5 ${flashMode === 'on' ? 'text-[#191c1b] fill-current' : 'text-[#cdecae]'}`} />
-                )}
-              </button>
+              <span className="text-[10px] text-white/60 font-medium">
+                {uploadedImage ? 'Live' : 'Flip'}
+              </span>
             </div>
-            <span className="text-[11px] font-medium text-white/90 capitalize">
-              Flash: {flashMode}
-            </span>
+
           </div>
-        </div>
-      </footer>
 
-      {/* No Plant Modal */}
-      {showNoPlantModal && (
-        <NoPlantModal
-          onRetake={() => {
-            setShowNoPlantModal(false);
-            setCustomImage(null);
-            startLiveCamera(facingMode);
-          }}
-          onCancel={() => setShowNoPlantModal(false)}
-        />
-      )}
-
-      {/* Scan Results Modal with Diagnosed Details */}
-      {activeResultDisease && (
-        <ScanResultModal
-          disease={
-            capturedSnapshot
-              ? { ...activeResultDisease, image: capturedSnapshot }
-              : activeResultDisease
-          }
-          onViewDiagnosis={() => {
-            onDiagnose(activeResultDisease);
-            setActiveResultDisease(null);
-            setScreen('diagnosis');
-          }}
-          onClose={() => setActiveResultDisease(null)}
-        />
-      )}
-
-      {/* How to Scan Help Modal */}
-      {showHelpModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in text-[#191c1b]">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl border border-[#e1e3e0]">
-            <div className="flex justify-between items-center border-b border-[#f0f2ef] pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[#cdecae] flex items-center justify-center text-[#354e1f]">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <h3 className="font-bold text-base text-[#191c1b]">FloraVeda Vision Tips</h3>
+          {/* Upload mode label */}
+          {uploadedImage && (
+            <div className="mt-3 flex justify-center">
+              <div className="flex items-center gap-1.5 bg-white/10 border border-white/15 rounded-full px-3 py-1">
+                <ImageIcon className="w-3 h-3 text-[#8ba870]" />
+                <span className="text-[10px] text-white/70 font-medium">Photo uploaded — tap Scan to analyse</span>
               </div>
-              <button
-                onClick={() => setShowHelpModal(false)}
-                className="w-8 h-8 rounded-full bg-[#f2f4f1] flex items-center justify-center text-[#74796d] hover:bg-[#e6e8e5]"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
-
-            <ul className="text-xs text-[#44483e] space-y-3 leading-relaxed">
-              <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#4c6635] text-white font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  1
-                </span>
-                <span>
-                  <strong>Distance:</strong> Position camera 6–10 inches from the leaf and ensure the infected area is centered.
-                </span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#4c6635] text-white font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  2
-                </span>
-                <span>
-                  <strong>Lighting:</strong> Bright, indirect daylight works best. Turn on the flashlight toggle in dim settings.
-                </span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#4c6635] text-white font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  3
-                </span>
-                <span>
-                  <strong>Photo Quality:</strong> Keep hands steady or choose high-resolution plant photos from your gallery for best accuracy.
-                </span>
-              </li>
-            </ul>
-
-            <button
-              onClick={() => setShowHelpModal(false)}
-              className="w-full bg-[#4c6635] hover:bg-[#354e1f] text-white py-3 rounded-xl font-semibold text-xs active:scale-98 transition-all cursor-pointer shadow-md"
-            >
-              Got it
-            </button>
-          </div>
-        </div>
+          )}
+        </footer>
       )}
     </div>
   );

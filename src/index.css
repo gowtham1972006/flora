@@ -8,10 +8,56 @@
 }
 
 @keyframes scan-vertical {
-  0% { top: 0%; opacity: 0; }
-  15% { opacity: 1; }
-  85% { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
+  0%   { top: 2%;   opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { top: 98%;  opacity: 0; }
+}
+
+@keyframes scan-fast {
+  0%   { top: 2%;  opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { top: 98%; opacity: 0; }
+}
+
+@keyframes corner-glow {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
+@keyframes result-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes ripple {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(2.4); opacity: 0;   }
+}
+
+@keyframes fade-out {
+  from { opacity: 0.9; }
+  to   { opacity: 0;   }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.22s ease-out both;
 }
 
 @keyframes float-slow {
@@ -25,7 +71,33 @@
 }
 
 .animate-scan {
-  animation: scan-vertical 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: scan-vertical 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-scan-fast {
+  animation: scan-fast 0.9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-corner-glow {
+  animation: corner-glow 1.8s ease-in-out infinite;
+}
+
+.animate-result-slide-up {
+  animation: result-slide-up 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.32s ease-out both;
+}
+
+.animate-ripple {
+  animation: ripple 1.2s ease-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 
 .animate-float {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile, ScreenType } from '../types';
+import { updateProfile } from '../lib/profile';
 import {
   User,
   Settings,
@@ -14,6 +15,7 @@ import {
   ShieldCheck,
   Calendar,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 
 interface ProfileScreenProps {
@@ -24,6 +26,8 @@ interface ProfileScreenProps {
   onOpenCareSchedule: () => void;
   onLogout: () => void;
   setScreen: (screen: ScreenType) => void;
+  userId?: string | null;
+  onProfileUpdated?: () => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
@@ -34,11 +38,34 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenCareSchedule,
   onLogout,
   setScreen,
+  userId,
+  onProfileUpdated,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [userName, setUserName] = useState(profile.name);
   const [userRole, setUserRole] = useState(profile.role);
   const [showHelpToast, setShowHelpToast] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!userId) {
+      // Not authenticated — save locally only
+      setIsEditing(false);
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await updateProfile(userId, { name: userName, role: userRole });
+      onProfileUpdated?.();
+      setIsEditing(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-6 pb-28 md:pb-12 animate-fade-in text-[#191c1b]">
@@ -56,17 +83,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             />
           </div>
           <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="absolute bottom-1 right-1 bg-[#4c6635] text-white rounded-full p-2.5 shadow-md hover:bg-[#354e1f] active:scale-95 transition-all cursor-pointer border-2 border-white"
+            onClick={isEditing ? handleSave : () => setIsEditing(true)}
+            disabled={saving}
+            className="absolute bottom-1 right-1 bg-[#4c6635] text-white rounded-full p-2.5 shadow-md hover:bg-[#354e1f] active:scale-95 transition-all cursor-pointer border-2 border-white disabled:opacity-60"
             aria-label={isEditing ? 'Save profile' : 'Edit profile'}
           >
-            {isEditing ? <Check className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : isEditing ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Edit3 className="w-4 h-4" />
+            )}
           </button>
         </div>
 
         <div className="flex-1 text-center sm:text-left space-y-1.5 w-full">
           {isEditing ? (
             <div className="space-y-3 w-full">
+              {saveError && (
+                <p className="text-xs text-[#93000a] bg-[#ffdad6] px-3 py-2 rounded-lg">{saveError}</p>
+              )}
               <div>
                 <label className="block text-[11px] font-bold text-[#74796d] uppercase tracking-wider mb-1">
                   Name
@@ -150,7 +187,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* Menu List Section */}
       <section className="bg-white rounded-2xl shadow-sm border border-[#e1e3e0] overflow-hidden divide-y divide-[#e1e3e0]/60">
         <button
-          onClick={() => setIsEditing(!isEditing)}
+          onClick={isEditing ? handleSave : () => setIsEditing(true)}
           className="w-full flex items-center px-5 py-4 hover:bg-[#f8faf7] transition-colors group text-left cursor-pointer"
         >
           <div className="w-10 h-10 rounded-full bg-[#f2f4f1] text-[#44483e] group-hover:text-[#4c6635] group-hover:bg-[#cdecae] transition-colors flex items-center justify-center mr-4 shrink-0">

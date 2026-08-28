@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { ScreenType, PlantItem, DiseaseItem, CareTask, PlantNotification } from './types';
-import { samplePlants, sampleDiseases, initialCareTasks, initialNotifications, sampleProfile } from './data/plantData';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ScreenType, PlantItem, DiseaseItem, CareTask } from './types';
 import { TopAppBar, BottomNavBar, DesktopSidebar } from './components/Navigation';
 import { SplashScreen } from './components/SplashScreen';
 import { OnboardingScreens } from './components/OnboardingScreens';
@@ -14,20 +13,70 @@ import { ProfileScreen } from './components/ProfileScreen';
 import { CareScheduleModal } from './components/CareScheduleModal';
 import { NotificationModal } from './components/NotificationModal';
 
+// Backend hooks & services
+import { useAuth } from './hooks/useAuth';
+import { useNotifications } from './hooks/useNotifications';
+import { fetchCareTasks, addCareTask, toggleCareTask } from './lib/careTasks';
+import { fetchFavoriteIds, toggleFavorite } from './lib/plants';
+
+// Fallback static data (used while loading or when unauthenticated)
+import { samplePlants, sampleDiseases } from './data/plantData';
+
 export const App: React.FC = () => {
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('home');
+  // ── Auth state (Supabase session) ────────────────────────────────────────────
+  const { user, profile, loading: authLoading, error: authError, login, register, loginWithGoogle, logout, clearError, refreshProfile } = useAuth();
+
+  // ── Screen / navigation ──────────────────────────────────────────────────────
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>('splash');
+  const [history, setHistory] = useState<ScreenType[]>(['splash']);
+  const justLoggedOutRef = useRef(false);
+
+  // ── Selected items ────────────────────────────────────────────────────────────
   const [selectedPlant, setSelectedPlant] = useState<PlantItem>(samplePlants[0]);
   const [selectedDisease, setSelectedDisease] = useState<DiseaseItem>(sampleDiseases.chlorosis);
-  const [favorites, setFavorites] = useState<string[]>(['1', '2', '4']);
-  const [careTasks, setCareTasks] = useState<CareTask[]>(initialCareTasks);
-  const [notifications, setNotifications] = useState<PlantNotification[]>(initialNotifications);
+
+  // ── Local care task state (synced from Supabase) ──────────────────────────────
+  const [careTasks, setCareTasks] = useState<CareTask[]>([]);
+  const [careTasksLoading, setCareTasksLoading] = useState(false);
+
+  // ── Favorites (IDs from Supabase, fallback to empty) ─────────────────────────
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+
+  // ── Modal visibility ──────────────────────────────────────────────────────────
   const [showCareModal, setShowCareModal] = useState(false);
   const [showNotifModal, setShowNotifModal] = useState(false);
-  const [userProfile, setUserProfile] = useState(sampleProfile);
 
-  // Screen History / Back navigation
-  const [history, setHistory] = useState<ScreenType[]>(['home']);
+  // ── Notifications (real-time via Supabase) ────────────────────────────────────
+  const { notifications, unreadCount, markAll, clearAll } = useNotifications(user?.id ?? null);
 
+  // ── Load user data when authenticated ────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+
+    // Load care tasks
+    setCareTasksLoading(true);
+    fetchCareTasks(user.id)
+      .then(setCareTasks)
+      .catch(console.error)
+      .finally(() => setCareTasksLoading(false));
+
+    // Load favorites
+    fetchFavoriteIds(user.id)
+      .then(setFavoriteIds)
+      .catch(console.error);
+  }, [user]);
+
+  // ── Navigate when auth state changes ─────────────────────────────────────────
+  useEffect(() => {
+    if (!authLoading && !justLoggedOutRef.current) {
+      if (user && (currentScreen === 'login' || currentScreen === 'signup' || currentScreen === 'splash')) {
+        navigateTo('home');
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading]);
+
+  // ── Navigation helpers ────────────────────────────────────────────────────────
   const navigateTo = (screen: ScreenType) => {
     setHistory((prev) => [...prev, screen]);
     setCurrentScreen(screen);
@@ -46,51 +95,121 @@ export const App: React.FC = () => {
     }
   };
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
+  // ── Favorites ─────────────────────────────────────────────────────────────────
+  const handleToggleFavorite = useCallback(async (plantId: string) => {
+    if (!user) {
+      // Unauthenticated: in-memory only
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(plantId)) next.delete(plantId); else next.add(plantId);
+        return next;
+      });
+      return;
+    }
 
-  const handleToggleTask = (id: string) => {
-    setCareTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
-  };
+    const isFav = favoriteIds.has(plantId);
+    // Optimistic
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (isFav) next.delete(plantId); else next.add(plantId);
+      return next;
+    });
+    try {
+      await toggleFavorite(user.id, plantId, isFav);
+      refreshProfile();
+    } catch (err) {
+      // Revert
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (isFav) next.add(plantId); else next.delete(plantId);
+        return next;
+      });
+      console.error('Failed to toggle favorite:', err);
+    }
+  }, [user, favoriteIds, refreshProfile]);
 
-  const handleAddTask = (
+  // ── Care Tasks ────────────────────────────────────────────────────────────────
+  const handleToggleTask = useCallback(async (id: string) => {
+    const task = careTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    // Optimistic
+    setCareTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
+
+    if (user) {
+      try {
+        await toggleCareTask(id, !task.completed);
+      } catch (err) {
+        // Revert
+        setCareTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: task.completed } : t)));
+        console.error('Failed to toggle task:', err);
+      }
+    }
+  }, [careTasks, user]);
+
+  const handleAddTask = useCallback(async (
     plantName: string,
     taskType: 'Water' | 'Fertilize' | 'Prune' | 'Mist'
   ) => {
-    const newTask: CareTask = {
-      id: Date.now().toString(),
-      plantName,
-      taskType,
-      dueDate: 'Today',
-      completed: false,
-    };
-    setCareTasks((prev) => [newTask, ...prev]);
+    if (user) {
+      try {
+        const newTask = await addCareTask(user.id, plantName, taskType, 0);
+        setCareTasks((prev) => [newTask, ...prev]);
+      } catch (err) {
+        console.error('Failed to add task:', err);
+      }
+    } else {
+      // Unauthenticated fallback
+      const newTask: CareTask = {
+        id: Date.now().toString(),
+        plantName,
+        taskType,
+        dueDate: 'Today',
+        completed: false,
+      };
+      setCareTasks((prev) => [newTask, ...prev]);
+    }
+  }, [user]);
+
+  // ── Auth actions ──────────────────────────────────────────────────────────────
+  const handleLogout = async () => {
+    justLoggedOutRef.current = true;
+    await logout();
+    setFavoriteIds(new Set());
+    setCareTasks([]);
+    // Hard-reset the nav stack to splash
+    setHistory(['splash']);
+    setCurrentScreen('splash');
+    // Release the guard after navigation settles
+    setTimeout(() => { justLoggedOutRef.current = false; }, 800);
   };
 
-  const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  };
+  // ── Derived values ────────────────────────────────────────────────────────────
+  const favoritesArray = Array.from(favoriteIds);
 
-  const handleClearNotifications = () => {
-    setNotifications([]);
-  };
-
-  const unreadNotifsCount = notifications.filter((n) => !n.read).length;
-
-  // Render full screen standalone experiences without outer shells
+  // ── Render: Auth loading splash ───────────────────────────────────────────────
+  // Show the splash screen immediately. The tiny spinner overlay resolves in <1s.
   if (currentScreen === 'splash') {
     return (
-      <SplashScreen
-        onGetStarted={() => navigateTo('onboarding_1')}
-        onLogin={() => navigateTo('login')}
-      />
+      <>
+        <SplashScreen
+          onGetStarted={() => navigateTo('onboarding_1')}
+          onLogin={() => navigateTo('login')}
+        />
+        {/* Brief loading overlay while we check for an existing session */}
+        {authLoading && (
+          <div className="fixed inset-0 z-50 bg-[#f8faf7] flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4 text-[#4c6635]">
+              <div className="w-12 h-12 rounded-full border-4 border-[#cdecae] border-t-[#4c6635] animate-spin" />
+              <p className="text-sm font-medium text-[#44483e]">Loading FloraVeda...</p>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
+
+  // ── Render: Full-screen standalone routes ─────────────────────────────────────
 
   if (currentScreen === 'onboarding_1') {
     return (
@@ -135,6 +254,11 @@ export const App: React.FC = () => {
         onSwitchMode={(mode) => navigateTo(mode)}
         onSuccessAuth={() => navigateTo('home')}
         onBack={() => navigateTo('home')}
+        onLogin={login}
+        onRegister={register}
+        onGoogleAuth={loginWithGoogle}
+        authError={authError}
+        authLoading={authLoading}
       />
     );
   }
@@ -143,6 +267,7 @@ export const App: React.FC = () => {
     return (
       <ScanCamera
         setScreen={navigateTo}
+        userId={user?.id}
         onDiagnose={(disease) => {
           setSelectedDisease(disease);
           navigateTo('diagnosis');
@@ -151,46 +276,54 @@ export const App: React.FC = () => {
     );
   }
 
-  // Regular In-App Layout for Home, Category, Details, Profile, Diagnosis
+  // ── Render: Main in-app layout ────────────────────────────────────────────────
   const isDetailView = currentScreen === 'plant_detail' || currentScreen === 'diagnosis';
+  const categoryScreens: ScreenType[] = ['category_flowers', 'category_leaf', 'category_succulents', 'category_trees'];
+  const showBack = isDetailView || categoryScreens.includes(currentScreen);
+
   const getHeaderTitle = () => {
     switch (currentScreen) {
-      case 'home':
-        return 'FloraVeda';
-      case 'category_flowers':
-        return 'Flowers';
-      case 'plant_detail':
-        return selectedPlant.name;
-      case 'diagnosis':
-        return selectedDisease.name;
-      case 'profile':
-        return 'My Profile';
-      default:
-        return 'FloraVeda';
+      case 'home':              return 'FloraVeda';
+      case 'category_flowers':  return 'Flowers';
+      case 'category_leaf':     return 'Leaf Plants';
+      case 'category_succulents': return 'Succulents';
+      case 'category_trees':    return 'Trees';
+      case 'plant_detail':      return selectedPlant.name;
+      case 'diagnosis':         return selectedDisease.name;
+      case 'profile':           return 'My Profile';
+      default:                  return 'FloraVeda';
     }
+  };
+
+  // Build current user profile for display (fall back gracefully)
+  const displayProfile = profile ?? {
+    name: user?.email?.split('@')[0] ?? 'Plant Lover',
+    role: 'Plant Enthusiast',
+    avatar: `https://api.dicebear.com/7.x/thumbs/svg?seed=${user?.id ?? 'default'}`,
+    plantsCount: careTasks.length,
+    favoritesCount: favoriteIds.size,
   };
 
   return (
     <div className="min-h-screen bg-[#f8faf7] text-[#191c1b] flex flex-col md:flex-row antialiased selection:bg-[#cdecae] selection:text-[#0d2000]">
-      {/* Desktop Sidebar Navigation */}
       <DesktopSidebar
         currentScreen={currentScreen}
         setScreen={navigateTo}
-        unreadCount={unreadNotifsCount}
+        unreadNotifsCount={unreadCount}
+        onOpenNotifications={() => setShowNotifModal(true)}
+        onOpenCareSchedule={() => setShowCareModal(true)}
+        profile={displayProfile}
       />
 
-      {/* Main Content Viewport */}
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
-        {/* Top Header */}
         <TopAppBar
           title={getHeaderTitle()}
-          showBack={isDetailView || currentScreen === 'category_flowers'}
+          showBack={showBack}
           onBack={handleBack}
           onOpenNotifications={() => setShowNotifModal(true)}
-          unreadCount={unreadNotifsCount}
+          unreadCount={unreadCount}
         />
 
-        {/* Dynamic Screen View */}
         <main className="flex-1 px-4 md:px-8 max-w-7xl w-full mx-auto">
           {currentScreen === 'home' && (
             <HomeDashboard
@@ -202,23 +335,30 @@ export const App: React.FC = () => {
             />
           )}
 
-          {currentScreen === 'category_flowers' && (
+          {/* Category screens – all four are now handled */}
+          {categoryScreens.includes(currentScreen) && (
             <CategoryList
               setScreen={navigateTo}
+              category={
+                currentScreen === 'category_flowers' ? 'Flowers'
+                : currentScreen === 'category_leaf' ? 'Leaf Plant'
+                : currentScreen === 'category_succulents' ? 'Succulents'
+                : 'Trees'
+              }
               onSelectPlant={(plant) => {
                 setSelectedPlant(plant);
                 navigateTo('plant_detail');
               }}
-              favorites={favorites}
-              onToggleFavorite={toggleFavorite}
+              favorites={favoritesArray}
+              onToggleFavorite={handleToggleFavorite}
             />
           )}
 
           {currentScreen === 'plant_detail' && (
             <PlantDetail
               plant={selectedPlant}
-              isFavorite={favorites.includes(selectedPlant.id)}
-              onToggleFavorite={toggleFavorite}
+              isFavorite={favoriteIds.has(selectedPlant.id)}
+              onToggleFavorite={handleToggleFavorite}
               onAddToSchedule={handleAddTask}
               onBack={handleBack}
             />
@@ -234,26 +374,26 @@ export const App: React.FC = () => {
 
           {currentScreen === 'profile' && (
             <ProfileScreen
-              profile={userProfile}
-              favoritesCount={favorites.length}
-              unreadNotifsCount={unreadNotifsCount}
+              profile={displayProfile}
+              favoritesCount={favoriteIds.size}
+              unreadNotifsCount={unreadCount}
               onOpenNotifications={() => setShowNotifModal(true)}
               onOpenCareSchedule={() => setShowCareModal(true)}
-              onLogout={() => navigateTo('splash')}
+              onLogout={handleLogout}
               setScreen={navigateTo}
+              userId={user?.id}
+              onProfileUpdated={refreshProfile}
             />
           )}
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar */}
       <BottomNavBar
         currentScreen={currentScreen}
         setScreen={navigateTo}
-        unreadCount={unreadNotifsCount}
+        unreadCount={unreadCount}
       />
 
-      {/* Care Schedule Modal */}
       {showCareModal && (
         <CareScheduleModal
           tasks={careTasks}
@@ -263,12 +403,11 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Notifications Modal */}
       {showNotifModal && (
         <NotificationModal
           notifications={notifications}
-          onMarkAllRead={handleMarkAllRead}
-          onClearAll={handleClearNotifications}
+          onMarkAllRead={markAll}
+          onClearAll={clearAll}
           onClose={() => setShowNotifModal(false)}
         />
       )}

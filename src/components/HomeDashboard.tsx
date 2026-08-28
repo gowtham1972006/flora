@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ScreenType, DiseaseItem } from '../types';
+import { fetchDiseases } from '../lib/diagnosis';
 import { sampleDiseases } from '../data/plantData';
 import { Search, Scan, AlertTriangle, Info, ArrowRight, Sparkles } from 'lucide-react';
 
@@ -14,9 +15,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<'leaf' | 'flowers' | 'succulents' | 'trees'>('leaf');
+  const [allDiseases, setAllDiseases] = useState<DiseaseItem[]>(() => Object.values(sampleDiseases));
 
-  const diseasesList = Object.values(sampleDiseases);
-  const filteredDiseases = diseasesList.filter(
+  // Load diseases from Supabase (falls back to static data on error)
+  useEffect(() => {
+    fetchDiseases()
+      .then(setAllDiseases)
+      .catch(() => setAllDiseases(Object.values(sampleDiseases)));
+  }, []);
+
+  const filteredDiseases = allDiseases.filter(
     (d) =>
       d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.commonName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -90,10 +98,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
           {/* Succulents */}
           <button
-            onClick={() => {
-              setActiveCategory('succulents');
-              setScreen('category_flowers');
-            }}
+            onClick={() => setScreen('category_succulents')}
             className="flex flex-col items-center justify-center min-w-[84px] py-3 px-3 rounded-2xl bg-[#eceeeb] text-[#191c1b] hover:bg-[#e7e9e6] shrink-0 transition-all duration-200 active:scale-95 cursor-pointer"
           >
             <div className="w-7 h-7 mb-1 flex items-center justify-center text-[#4c6635]">
@@ -106,10 +111,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
           {/* Trees */}
           <button
-            onClick={() => {
-              setActiveCategory('trees');
-              setScreen('category_flowers');
-            }}
+            onClick={() => setScreen('category_trees')}
             className="flex flex-col items-center justify-center min-w-[84px] py-3 px-3 rounded-2xl bg-[#eceeeb] text-[#191c1b] hover:bg-[#e7e9e6] shrink-0 transition-all duration-200 active:scale-95 cursor-pointer"
           >
             <div className="w-7 h-7 mb-1 flex items-center justify-center text-[#4c6635]">
