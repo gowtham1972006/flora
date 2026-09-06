@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, ScreenType } from '../types';
 import { updateProfile } from '../lib/profile';
+import type { Translations } from '../lib/i18n';
 import {
   User,
   Settings,
@@ -28,6 +29,7 @@ interface ProfileScreenProps {
   setScreen: (screen: ScreenType) => void;
   userId?: string | null;
   onProfileUpdated?: () => void;
+  T: Translations;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
@@ -40,6 +42,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   setScreen,
   userId,
   onProfileUpdated,
+  T,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [userName, setUserName] = useState(profile.name);
@@ -201,15 +204,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </button>
 
         <button
-          onClick={onOpenCareSchedule}
+          onClick={() => setScreen('settings')}
           className="w-full flex items-center px-5 py-4 hover:bg-[#f8faf7] transition-colors group text-left cursor-pointer"
         >
           <div className="w-10 h-10 rounded-full bg-[#f2f4f1] text-[#44483e] group-hover:text-[#4c6635] group-hover:bg-[#cdecae] transition-colors flex items-center justify-center mr-4 shrink-0">
             <Settings className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <span className="font-semibold text-sm text-[#191c1b] block">Settings & Care Reminders</span>
-            <span className="text-xs text-[#74796d] block truncate">Manage watering intervals and notifications</span>
+            <span className="font-semibold text-sm text-[#191c1b] block">{T.profile_settings}</span>
+            <span className="text-xs text-[#74796d] block truncate">{T.profile_settingsSub}</span>
           </div>
           <ChevronRight className="w-5 h-5 text-[#74796d] shrink-0 ml-2" />
         </button>
@@ -256,7 +259,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <div>
               <p className="font-bold text-sm text-[#191c1b]">Doctor Plant Guidance</p>
               <p className="text-xs text-[#44483e] mt-0.5">
-                FloraVeda automatically synchronizes with botanical treatment libraries. For urgent pest issues, use the AI Plant Scanner.
+                Flora automatically synchronizes with botanical treatment libraries. For urgent pest issues, use the AI Plant Scanner.
               </p>
             </div>
           </div>
@@ -276,7 +279,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           className="w-full bg-[#ffdad6] hover:bg-[#ba1a1a] hover:text-white text-[#93000a] font-semibold text-sm sm:text-base py-3.5 sm:py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-98 transition-all duration-150 shadow-sm cursor-pointer"
         >
           <LogOut className="w-5 h-5" />
-          <span>Log Out</span>
+          <span>{T.profile_logout}</span>
         </button>
       </section>
     </div>

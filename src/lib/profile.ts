@@ -14,39 +14,91 @@ function toUserProfile(row: DbProfile, favoritesCount: number): UserProfile {
   };
 }
 
+// ─── Client-side default when DB is unavailable ──────────────────────────────
+function clientDefault(userId: string, name: string, favoritesCount: number): UserProfile {
+  return {
+    name,
+    role: 'Plant Enthusiast',
+    avatar: `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
+    plantsCount: 0,
+    favoritesCount,
+  };
+}
+
 // ─── Fetch user profile ───────────────────────────────────────────────────────
-// Uses maybeSingle() instead of single() so missing rows return null, not an error.
-// If no profile row exists yet (trigger hasn't run), we upsert a default one.
-export async function fetchProfile(userId: string): Promise<UserProfile> {
-  const [profileResult, favCount] = await Promise.all([
-    supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-    countFavorites(userId).catch(() => 0),
-  ]);
+// Accepts an optional fallbackName (from auth user metadata) used when:
+//   - the profile row has an empty name (trigger not yet committed)
+//   - the profile row does not exist yet
+// Retries up to 3 times with 600 ms gaps to handle the auth-trigger race.
+export async function fetchProfile(userId: string, fallbackName?: string): Promise<UserProfile> {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 600;
 
-  if (profileResult.error) throw new Error(profileResult.error.message);
+  // Fetch favorites count once outside the retry loop
+  let favCount = 0;
+  try {
+    favCount = await countFavorites(userId);
+  } catch { /* non-critical */ }
 
-  // No row yet — upsert a sensible default then return it
-  if (!profileResult.data) {
-    const { data: upserted, error: upsertErr } = await supabase
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log('[PROFILE] attempt:', attempt);
+    const { data, error } = await supabase
       .from('profiles')
-      .upsert({ id: userId, name: '', role: 'Plant Enthusiast', plants_count: 0 })
-      .select()
+      .select('*')
+      .eq('id', userId)
       .maybeSingle();
 
-    if (upsertErr || !upserted) {
-      // Still can't get a row — return a client-side default without throwing
-      return {
-        name: 'Plant Lover',
-        role: 'Plant Enthusiast',
-        avatar: `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-        plantsCount: 0,
-        favoritesCount: 0,
-      };
+    if (error) throw new Error(error.message);
+
+    const isLastAttempt = attempt === MAX_RETRIES;
+    console.log('[PROFILE] found:', !!data, '| has name:', !!(data as DbProfile | null)?.name);
+
+    // Profile exists and has a real name — return immediately
+    if (data && data.name) {
+      return toUserProfile(data as DbProfile, favCount);
     }
-    return toUserProfile(upserted as DbProfile, favCount);
+
+    // Profile row not ready (missing or blank name) — retry if we have time
+    if (!isLastAttempt) {
+      await new Promise<void>((r) => setTimeout(r, RETRY_DELAY_MS));
+      continue;
+    }
+
+    // ── Final attempt — resolve with best available data ──────────────────
+    const nameToUse = fallbackName?.trim() || 'Plant Lover';
+
+    if (!data) {
+      // No row — create one with the fallback name (trigger must have failed)
+      console.warn('[PROFILE] no row found after retries — attempting client-side upsert');
+      const { data: upserted, error: upsertErr } = await supabase
+        .from('profiles')
+        .upsert({ id: userId, name: nameToUse, role: 'Plant Enthusiast', plants_count: 0 })
+        .select()
+        .maybeSingle();
+
+      if (upsertErr || !upserted) {
+        console.warn('[PROFILE] upsert failed (RLS or network) — using client default:', upsertErr?.message);
+        return clientDefault(userId, nameToUse, favCount);
+      }
+      return toUserProfile(upserted as DbProfile, favCount);
+    }
+
+    // Row exists but name is still blank — patch it with the fallback name
+    if (!data.name && nameToUse !== 'Plant Lover') {
+      // Fire-and-forget; don't block the UI
+      void supabase
+        .from('profiles')
+        .update({ name: nameToUse })
+        .eq('id', userId);
+    }
+    return toUserProfile(
+      { ...data, name: data.name || nameToUse } as DbProfile,
+      favCount
+    );
   }
 
-  return toUserProfile(profileResult.data as DbProfile, favCount);
+  // Should be unreachable, but TypeScript requires a return
+  return clientDefault(userId, fallbackName?.trim() || 'Plant Lover', 0);
 }
 
 // ─── Update name and/or role ──────────────────────────────────────────────────
@@ -83,6 +135,7 @@ export async function updateAvatar(
 
 // ─── Increment plants_count (called when user adds plant to care schedule) ────
 export async function incrementPlantsCount(userId: string): Promise<void> {
-  // Use a Postgres function to avoid race conditions
-  await supabase.rpc('increment_plants_count' as never, { uid: userId });
+  // Use a Postgres function to avoid race conditions.
+  // The RPC is now typed in the Database interface so no cast is needed.
+  await supabase.rpc('increment_plants_count', { uid: userId });
 }

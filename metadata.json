@@ -1,5 +1,5 @@
 {
-  "name": "FloraVeda",
+  "name": "Flora",
   "description": "Nurture your botanical life with precision care, AI plant diagnostics, and expert botanical guidance.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

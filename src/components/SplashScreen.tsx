@@ -33,7 +33,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onGetStarted, onLogi
         </div>
 
         <h1 className="font-bold text-4xl text-[#4c6635] tracking-tight mb-3">
-          FloraVeda
+          Flora
         </h1>
         <p className="text-base md:text-lg text-[#44483e] leading-relaxed max-w-xs">
           Nurture your botanical life with precision care and expert guidance.

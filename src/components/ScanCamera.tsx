@@ -4,13 +4,17 @@ import { diagnoseImage } from '../lib/diagnosis';
 import {
   X, Image as ImageIcon, Zap, ZapOff, SwitchCamera,
   AlertCircle, RefreshCw, ChevronRight, Check,
-  FlaskConical, Leaf, RotateCcw, Loader2,
+  FlaskConical, Leaf, RotateCcw, Loader2, CloudSun,
 } from 'lucide-react';
+import type { Translations } from '../lib/i18n';
+import type { UseWeatherResult } from '../hooks/useWeather';
 
 interface ScanCameraProps {
   setScreen: (screen: ScreenType) => void;
   onDiagnose: (disease: DiseaseItem) => void;
   userId?: string | null;
+  T?: Translations;
+  weather?: UseWeatherResult;
 }
 
 type ScanPhase = 'idle' | 'scanning' | 'done' | 'error';
@@ -31,7 +35,7 @@ const SEVERITY_COLOR: Record<string, string> = {
   Low:    'bg-green-500/90 text-white',
 };
 
-export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, userId }) => {
+export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, userId, T, weather }) => {
   // ── Camera state ────────────────────────────────────────────────────────────
   const [cameraState, setCameraState]   = useState<CameraState>('requesting');
   const [cameraError, setCameraError]   = useState('');
@@ -337,7 +341,9 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
         {/* Title pill */}
         <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/15 rounded-full px-4 py-2">
           <Leaf className="w-4 h-4 text-[#8ba870]" />
-          <span className="text-white text-sm font-bold tracking-wide">Plant Scanner</span>
+          <span className="text-white text-sm font-bold tracking-wide">
+            {T?.scan_title ?? 'Plant Scanner'}
+          </span>
           {!uploadedImage && cameraState === 'active' && (
             <span className="w-2 h-2 rounded-full bg-[#52ff00] animate-pulse" />
           )}
@@ -357,6 +363,29 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
           <div className="w-10" />
         )}
       </header>
+
+      {/* FIX 4: Active weather alert banner on scan screen */}
+      {weather?.data && weather.data.alerts.length > 0 && (() => {
+        const alert = weather.data!.alerts[0];
+        const alertMessages: Record<string, string> = {
+          weather_alertHeat:     T?.weather_alertHeat     ?? '🌡️ Heat stress warning',
+          weather_alertFrost:    T?.weather_alertFrost    ?? '🌨️ Frost risk tonight',
+          weather_alertRain:     T?.weather_alertRain     ?? '🌧️ Heavy rain expected',
+          weather_alertDrought:  T?.weather_alertDrought  ?? '🌵 Dry spell ahead',
+          weather_alertWind:     T?.weather_alertWind     ?? '💨 Strong winds',
+          weather_alertHumidity: T?.weather_alertHumidity ?? '💧 High humidity',
+        };
+        return (
+          <div className="relative z-20 mx-4 mt-2 mb-1">
+            <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md border border-amber-400/30 rounded-xl px-3 py-2">
+              <CloudSun className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <p className="text-[11px] text-amber-200 font-medium leading-tight flex-1">
+                {alertMessages[alert.messageKey] ?? alert.messageKey}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ════════════════════════════════════════════════════════════════
           VIEWFINDER  (the scanning frame)

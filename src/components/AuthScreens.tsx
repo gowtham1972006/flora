@@ -12,6 +12,10 @@ interface AuthScreensProps {
   onGoogleAuth: () => Promise<boolean>;
   authError: string | null;
   authLoading: boolean;
+  /** Set when signup succeeded but Supabase requires email confirmation first. */
+  needsEmailConfirmation?: boolean;
+  /** Reset the confirmation-pending flag (e.g. when the user goes back). */
+  onClearNeedsEmailConfirmation?: () => void;
 }
 
 export const AuthScreens: React.FC<AuthScreensProps> = ({
@@ -24,6 +28,8 @@ export const AuthScreens: React.FC<AuthScreensProps> = ({
   onGoogleAuth,
   authError,
   authLoading,
+  needsEmailConfirmation = false,
+  onClearNeedsEmailConfirmation,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -65,6 +71,51 @@ export const AuthScreens: React.FC<AuthScreensProps> = ({
     // Google redirects the page — success modal not needed here
   };
 
+  // ─── Email confirmation pending screen ──────────────────────────────────────
+  // Show this instead of the normal form when Supabase requires confirmation.
+  if (needsEmailConfirmation) {
+    return (
+      <div className="min-h-screen bg-[#f8faf7] flex flex-col items-center justify-center px-6 py-12 text-center">
+        <div className="max-w-sm w-full space-y-6">
+          <div className="w-20 h-20 mx-auto rounded-full bg-[#cdecae]/50 flex items-center justify-center">
+            <svg className="w-10 h-10 text-[#4c6635]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+            </svg>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-[#191c1b] tracking-tight">Check your inbox</h2>
+            <p className="text-sm text-[#44483e] leading-relaxed">
+              We sent a verification link to <strong>{email}</strong>.
+              Click the link in that email to activate your account and sign in.
+            </p>
+          </div>
+          <p className="text-xs text-[#74796d]">
+            Didn&apos;t receive it? Check your spam folder or&nbsp;
+            <button
+              type="button"
+              onClick={() => {
+                onClearNeedsEmailConfirmation?.();
+              }}
+              className="text-[#4c6635] font-semibold hover:underline"
+            >
+              try a different email
+            </button>.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              onClearNeedsEmailConfirmation?.();
+              onSwitchMode('login');
+            }}
+            className="w-full bg-[#4c6635] text-white font-semibold py-3.5 rounded-xl hover:bg-[#354e1f] transition-colors"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f8faf7] text-[#191c1b] flex flex-col md:flex-row relative">
       {/* Decorative Image Side (Desktop Only) */}
@@ -83,7 +134,7 @@ export const AuthScreens: React.FC<AuthScreensProps> = ({
                 <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A9.5 9.5 0 0 0 17 8M3.27 3L2 4.27l4.08 4.08C4.5 10.9 3.5 13.8 3.5 17c0 1.25.21 2.45.58 3.57L6 20.35A9.45 9.45 0 0 1 5.5 17c0-2.6 1-5 2.72-6.72L12 14v1.5a5.5 5.5 0 0 0 5.5 5.5h1.5v-1.5a5.5 5.5 0 0 0-5.5-5.5H12V12l3.28-3.28C14.1 8.28 13.07 8 12 8c-.68 0-1.34.12-1.95.34L3.27 3z" />
               </svg>
             </div>
-            <h2 className="text-3xl font-bold tracking-tight">FloraVeda</h2>
+            <h2 className="text-3xl font-bold tracking-tight">Flora</h2>
           </div>
           <p className="text-lg opacity-90 font-medium">
             Cultivate your urban garden with precision and care.
@@ -101,7 +152,7 @@ export const AuthScreens: React.FC<AuthScreensProps> = ({
           >
             <ArrowRight className="w-5 h-5 transform rotate-180" />
           </button>
-          <span className="font-bold text-xl text-[#4c6635]">FloraVeda</span>
+          <span className="font-bold text-xl text-[#4c6635]">Flora</span>
           <div className="w-10" />
         </div>
 
@@ -277,7 +328,7 @@ export const AuthScreens: React.FC<AuthScreensProps> = ({
             <p className="text-sm text-[#44483e] leading-relaxed mb-8 max-w-[260px]">
               {mode === 'login'
                 ? 'Your plants have missed you. Let\'s check on your garden health.'
-                : 'Welcome to FloraVeda! Your botanical journey begins now.'}
+                : 'Welcome to Flora! Your botanical journey begins now.'}
             </p>
             <button
               onClick={() => {

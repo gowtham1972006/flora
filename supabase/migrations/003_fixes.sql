@@ -1,5 +1,5 @@
 -- ============================================================
--- FloraVeda – Patch: backfill missing profiles + add RPC
+-- Flora – Patch: backfill missing profiles + add RPC
 -- Run this in: Supabase → SQL Editor → New Query → Run
 -- ============================================================
 

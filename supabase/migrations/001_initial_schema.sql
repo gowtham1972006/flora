@@ -1,5 +1,5 @@
 -- ============================================================
--- FloraVeda – Initial Database Schema
+-- Flora – Initial Database Schema
 -- Run this in: Supabase → SQL Editor → New Query → Run
 -- ============================================================
 

@@ -1,5 +1,5 @@
 -- ============================================================
--- FloraVeda – Storage Buckets & Row-Level Security Policies
+-- Flora – Storage Buckets & Row-Level Security Policies
 -- Run this AFTER 001_initial_schema.sql
 -- ============================================================
 

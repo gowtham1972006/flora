@@ -105,7 +105,7 @@ export async function diagnoseImage(
     void saveScanHistory(userId, null, data.diseaseId, result.disease, data.confidenceScore);
     return result;
   } catch (edgeErr) {
-    console.warn('[FloraVeda] Edge Function unavailable:', (edgeErr as Error)?.message);
+    console.warn('[Flora] Edge Function unavailable:', (edgeErr as Error)?.message);
   }
 
   // 2. Try client-side Gemini (only if VITE_GEMINI_API_KEY is set)
@@ -115,7 +115,7 @@ export async function diagnoseImage(
       const result = await runClientGemini(base64Data, apiKey, userId);
       if (result) return result;
     } catch (geminiErr) {
-      console.warn('[FloraVeda] Client-side Gemini failed:', (geminiErr as Error)?.message);
+      console.warn('[Flora] Client-side Gemini failed:', (geminiErr as Error)?.message);
     }
   }
 
@@ -135,7 +135,7 @@ async function runClientGemini(
     const mod = await import('@google/genai');
     GoogleGenAI = mod.GoogleGenAI;
   } catch {
-    console.warn('[FloraVeda] @google/genai not available in this environment');
+    console.warn('[Flora] @google/genai not available in this environment');
     return null;
   }
 

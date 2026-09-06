@@ -1,8 +1,8 @@
-# FloraVeda – Backend Setup Guide
+# Flora – Backend Setup Guide
 
 ## Overview
 
-FloraVeda uses **Supabase** as its complete backend, providing:
+Flora uses **Supabase** as its complete backend, providing:
 
 | Feature | Supabase Service |
 |---|---|
@@ -22,7 +22,7 @@ All resources used are on the **free tier**.
 ## 1. Create a Supabase Project
 
 1. Go to [https://supabase.com](https://supabase.com) and sign in.
-2. Click **New Project**, choose a name (e.g. `floraveda`), set a strong DB password, and pick a region.
+2. Click **New Project**, choose a name (e.g. `Flora`), set a strong DB password, and pick a region.
 3. Wait ~2 minutes for provisioning.
 
 ---
@@ -39,23 +39,31 @@ Fill in `.env` with values from your Supabase dashboard:
 | Variable | Where to find it |
 |---|---|
 | `VITE_SUPABASE_URL` | Project Settings → API → Project URL |
-| `VITE_SUPABASE_ANON_KEY` | Project Settings → API → anon public key |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Project Settings → API → anon / publishable key |
 | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/app/apikey) |
 | `VITE_APP_URL` | `http://localhost:3000` for local dev, your deployed URL for production |
 
 > `GEMINI_API_KEY` is used **server-side only** (Supabase Edge Function). Never put it in a `VITE_` prefixed variable.
 
+> **Note on key format:** Newer Supabase projects use a `sb_publishable_...` format for the anon/publishable key. This is correct — use it as-is in `VITE_SUPABASE_PUBLISHABLE_KEY`. The legacy env-var name `VITE_SUPABASE_ANON_KEY` is still accepted as a fallback.
+
 ---
 
 ## 3. Run the Database Migrations
 
-In the Supabase dashboard → **SQL Editor**, run the two migration files in order:
+In the Supabase dashboard → **SQL Editor**, run the migration files in order:
 
 **Step 1:** Paste and run `supabase/migrations/001_initial_schema.sql`  
 Creates all tables, triggers, and seeds the plant + disease catalog.
 
 **Step 2:** Paste and run `supabase/migrations/002_storage_and_rls.sql`  
 Creates storage buckets and all Row-Level Security policies.
+
+**Step 3:** Paste and run `supabase/migrations/003_fixes.sql`  
+Backfills any profiles missing from the trigger, adds `increment_plants_count` RPC.
+
+**Step 4:** Paste and run `supabase/migrations/004_notifications_rls_fix.sql`  
+Fixes the notifications INSERT RLS policy to be scoped to the authenticated user.
 
 ---
 

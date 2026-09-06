@@ -29,7 +29,7 @@ export const TopAppBar: React.FC<{
   unreadCount?: number;
   onOpenNotifications?: () => void;   // fixed: was onOpenNotif
 }> = ({
-  title = 'FloraVeda',
+  title = 'Flora',
   showBack = false,
   onBack,
   showNotif = true,
@@ -159,7 +159,7 @@ export const DesktopSidebar: React.FC<NavigationProps> = ({
           </svg>
         </div>
         <div>
-          <h2 className="font-bold text-xl text-[#4c6635]">FloraVeda</h2>
+          <h2 className="font-bold text-xl text-[#4c6635]">Flora</h2>
           <p className="text-xs text-[#50634e]">Botanical Health System</p>
         </div>
       </div>

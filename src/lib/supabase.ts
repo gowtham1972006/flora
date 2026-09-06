@@ -1,13 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
 // ─── Environment variables (Vite exposes VITE_* vars to the client) ──────────
+// Uses the Supabase publishable key format (sb_publishable_...).
+// This is the recommended client-side key for browser applications.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabasePublishableKey) {
   console.error(
-    '[FloraVeda] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY.\n' +
-    'Copy .env.example to .env and fill in your Supabase project values.'
+    '[Flora] Missing Supabase credentials.\n' +
+    'Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your .env file.'
   );
 }
 
@@ -104,11 +106,18 @@ export interface Database {
       notifications: { Row: DbNotification;  Insert: Partial<DbNotification>;  Update: Partial<DbNotification> };
       scan_history:  { Row: DbScanHistory;   Insert: Partial<DbScanHistory>;   Update: Partial<DbScanHistory> };
     };
+    Functions: {
+      // RPC defined in supabase/migrations/003_fixes.sql
+      increment_plants_count: {
+        Args: { uid: string };
+        Returns: undefined;
+      };
+    };
   };
 }
 
 // ─── Singleton Supabase client ────────────────────────────────────────────────
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient<Database>(supabaseUrl, supabasePublishableKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

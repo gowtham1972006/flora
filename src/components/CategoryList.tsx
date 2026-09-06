@@ -56,10 +56,10 @@ export const CategoryList: React.FC<CategoryListProps> = ({
   const loadPlants = useCallback(async () => {
     setLoading(true);
     try {
-      const favSet = new Set(favorites);
+      const favSet = new Set<string>(favorites);
       const data = searchQuery.trim()
         ? await searchPlants(searchQuery, favSet)
-        : await fetchPlants(category, favSet);
+        : await fetchPlants(category as PlantItem['category'] | undefined, favSet);
 
       // Apply sub-type filter locally (avoids extra round-trip)
       const filtered = selectedFilter === 'All'

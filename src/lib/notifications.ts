@@ -97,7 +97,7 @@ export async function seedDefaultNotifications(userId: string): Promise<void> {
 
   const defaults: Array<{ title: string; message: string; type: PlantNotification['type'] }> = [
     {
-      title: 'Welcome to FloraVeda!',
+      title: 'Welcome to Flora!',
       message: 'Start by scanning a plant leaf to detect diseases or browse the plant catalog.',
       type: 'system',
     },

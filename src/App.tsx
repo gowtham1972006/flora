@@ -12,6 +12,12 @@ import { DiagnosisDetail } from './components/DiagnosisDetail';
 import { ProfileScreen } from './components/ProfileScreen';
 import { CareScheduleModal } from './components/CareScheduleModal';
 import { NotificationModal } from './components/NotificationModal';
+import { SettingsScreen } from './components/SettingsScreen';
+import { WeatherCard } from './components/WeatherCard';
+
+// i18n + weather
+import { useLanguage } from './hooks/useLanguage';
+import { useWeather } from './hooks/useWeather';
 
 // Backend hooks & services
 import { useAuth } from './hooks/useAuth';
@@ -23,8 +29,15 @@ import { fetchFavoriteIds, toggleFavorite } from './lib/plants';
 import { samplePlants, sampleDiseases } from './data/plantData';
 
 export const App: React.FC = () => {
+  // ── i18n ─────────────────────────────────────────────────────────────────────
+  const { lang, setLang, T, LANGUAGES: _LANGUAGES } = useLanguage();
+
   // ── Auth state (Supabase session) ────────────────────────────────────────────
-  const { user, profile, loading: authLoading, error: authError, login, register, loginWithGoogle, logout, clearError, refreshProfile } = useAuth();
+  const { user, profile, loading: authLoading, error: authError, login, register, loginWithGoogle, logout, clearError, refreshProfile, needsEmailConfirmation, clearNeedsEmailConfirmation } = useAuth();
+
+  // ── Weather ───────────────────────────────────────────────────────────────────
+  // lang passed so translated messages are used for Supabase notification body
+  const weather = useWeather(user?.id ?? null, lang);
 
   // ── Screen / navigation ──────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('splash');
@@ -177,9 +190,10 @@ export const App: React.FC = () => {
     await logout();
     setFavoriteIds(new Set());
     setCareTasks([]);
-    // Hard-reset the nav stack to splash
-    setHistory(['splash']);
-    setCurrentScreen('splash');
+    // Navigate directly to login so the user can sign back in immediately.
+    // Avoids the splash→useEffect edge case where authLoading could re-navigate.
+    setHistory(['login']);
+    setCurrentScreen('login');
     // Release the guard after navigation settles
     setTimeout(() => { justLoggedOutRef.current = false; }, 800);
   };
@@ -201,7 +215,7 @@ export const App: React.FC = () => {
           <div className="fixed inset-0 z-50 bg-[#f8faf7] flex items-center justify-center">
             <div className="flex flex-col items-center gap-4 text-[#4c6635]">
               <div className="w-12 h-12 rounded-full border-4 border-[#cdecae] border-t-[#4c6635] animate-spin" />
-              <p className="text-sm font-medium text-[#44483e]">Loading FloraVeda...</p>
+              <p className="text-sm font-medium text-[#44483e]">{T.loading}</p>
             </div>
           </div>
         )}
@@ -259,6 +273,8 @@ export const App: React.FC = () => {
         onGoogleAuth={loginWithGoogle}
         authError={authError}
         authLoading={authLoading}
+        needsEmailConfirmation={needsEmailConfirmation}
+        onClearNeedsEmailConfirmation={clearNeedsEmailConfirmation}
       />
     );
   }
@@ -272,6 +288,8 @@ export const App: React.FC = () => {
           setSelectedDisease(disease);
           navigateTo('diagnosis');
         }}
+        T={T}
+        weather={weather}
       />
     );
   }
@@ -279,25 +297,28 @@ export const App: React.FC = () => {
   // ── Render: Main in-app layout ────────────────────────────────────────────────
   const isDetailView = currentScreen === 'plant_detail' || currentScreen === 'diagnosis';
   const categoryScreens: ScreenType[] = ['category_flowers', 'category_leaf', 'category_succulents', 'category_trees'];
-  const showBack = isDetailView || categoryScreens.includes(currentScreen);
+  const showBack = isDetailView || categoryScreens.includes(currentScreen) || currentScreen === 'settings';
 
   const getHeaderTitle = () => {
     switch (currentScreen) {
-      case 'home':              return 'FloraVeda';
-      case 'category_flowers':  return 'Flowers';
-      case 'category_leaf':     return 'Leaf Plants';
-      case 'category_succulents': return 'Succulents';
-      case 'category_trees':    return 'Trees';
+      case 'home':              return 'Flora';
+      case 'category_flowers':  return T.home_flowers;
+      case 'category_leaf':     return T.home_leafPlants;
+      case 'category_succulents': return T.home_succulents;
+      case 'category_trees':    return T.home_trees;
       case 'plant_detail':      return selectedPlant.name;
       case 'diagnosis':         return selectedDisease.name;
-      case 'profile':           return 'My Profile';
-      default:                  return 'FloraVeda';
+      case 'profile':           return T.profile_title;
+      case 'settings':          return T.settings_title;
+      default:                  return 'Flora';
     }
   };
 
-  // Build current user profile for display (fall back gracefully)
+  // Build current user profile for display (fall back gracefully).
+  // NOTE: Never derive the displayed name from the email prefix — use a generic
+  // fallback instead. The real name arrives shortly after via fetchProfile().
   const displayProfile = profile ?? {
-    name: user?.email?.split('@')[0] ?? 'Plant Lover',
+    name: 'Plant Lover',
     role: 'Plant Enthusiast',
     avatar: `https://api.dicebear.com/7.x/thumbs/svg?seed=${user?.id ?? 'default'}`,
     plantsCount: careTasks.length,
@@ -332,6 +353,10 @@ export const App: React.FC = () => {
                 setSelectedDisease(disease);
                 navigateTo('diagnosis');
               }}
+              T={T}
+              weatherSlot={
+                <WeatherCard weather={weather} T={T} />
+              }
             />
           )}
 
@@ -383,6 +408,19 @@ export const App: React.FC = () => {
               setScreen={navigateTo}
               userId={user?.id}
               onProfileUpdated={refreshProfile}
+              T={T}
+            />
+          )}
+
+          {currentScreen === 'settings' && (
+            <SettingsScreen
+              T={T}
+              lang={lang}
+              onSetLang={setLang}
+              weatherEnabled={weather.enabled}
+              onWeatherEnable={weather.enable}
+              onWeatherDisable={weather.disable}
+              onBack={handleBack}
             />
           )}
         </main>

@@ -3,15 +3,20 @@ import { ScreenType, DiseaseItem } from '../types';
 import { fetchDiseases } from '../lib/diagnosis';
 import { sampleDiseases } from '../data/plantData';
 import { Search, Scan, AlertTriangle, Info, ArrowRight, Sparkles } from 'lucide-react';
+import type { Translations } from '../lib/i18n';
 
 interface HomeDashboardProps {
   setScreen: (screen: ScreenType) => void;
   onSelectDisease: (disease: DiseaseItem) => void;
+  T: Translations;
+  weatherSlot?: React.ReactNode;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   setScreen,
   onSelectDisease,
+  T,
+  weatherSlot,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<'leaf' | 'flowers' | 'succulents' | 'trees'>('leaf');
@@ -37,10 +42,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       <section className="space-y-4">
         <div>
           <h2 className="text-2xl md:text-3xl font-bold text-[#191c1b] tracking-tight">
-            Find plant disease
+            {T.home_diseaseLib}
           </h2>
           <p className="text-sm text-[#44483e] mt-1">
-            Detect symptoms early and protect your botanicals with targeted treatments.
+            {T.home_diseaseLibSub}
           </p>
         </div>
 
@@ -51,7 +56,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search for diseases or symptoms..."
+            placeholder={T.home_search}
             className="w-full bg-[#f2f4f1] border border-[#e1e3e0] rounded-full py-3.5 pl-12 pr-4 text-sm font-medium text-[#191c1b] placeholder:text-[#74796d] focus:outline-none focus:ring-2 focus:ring-[#4c6635] focus:bg-white transition-all shadow-sm"
           />
           {searchQuery && (
@@ -59,16 +64,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               onClick={() => setSearchQuery('')}
               className="absolute right-4 top-1/2 -translate-y-1/2 text-xs bg-[#e1e3e0] text-[#44483e] rounded-full px-2 py-0.5 hover:bg-[#c4c8ba]"
             >
-              Clear
+              {T.cancel}
             </button>
           )}
         </div>
       </section>
 
+      {/* Weather Card (injected from App) */}
+      {weatherSlot}
+
       {/* Categories Horizontal Scroll */}
       <section>
+        <p className="text-xs font-bold text-[#74796d] uppercase tracking-widest mb-2.5">{T.home_categories}</p>
         <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1">
-          {/* Leaf Plant */}
           <button
             onClick={() => setActiveCategory('leaf')}
             className={`flex flex-col items-center justify-center min-w-[84px] py-3 px-3 rounded-2xl shrink-0 transition-all duration-200 active:scale-95 cursor-pointer ${
@@ -82,7 +90,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A9.5 9.5 0 0 0 17 8M3.27 3L2 4.27l4.08 4.08C4.5 10.9 3.5 13.8 3.5 17c0 1.25.21 2.45.58 3.57L6 20.35A9.45 9.45 0 0 1 5.5 17c0-2.6 1-5 2.72-6.72L12 14v1.5a5.5 5.5 0 0 0 5.5 5.5h1.5v-1.5a5.5 5.5 0 0 0-5.5-5.5H12V12l3.28-3.28C14.1 8.28 13.07 8 12 8c-.68 0-1.34.12-1.95.34L3.27 3z" />
               </svg>
             </div>
-            <span className="text-xs">Leaf Plant</span>
+            <span className="text-xs">{T.home_leafPlants}</span>
           </button>
 
           {/* Flowers */}
@@ -93,7 +101,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <div className="w-7 h-7 mb-1 flex items-center justify-center text-[#4c6635]">
               <Sparkles className="w-5 h-5" />
             </div>
-            <span className="text-xs font-medium">Flowers</span>
+            <span className="text-xs font-medium">{T.home_flowers}</span>
           </button>
 
           {/* Succulents */}
@@ -106,7 +114,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <path d="M12 2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0V3a1 1 0 0 1 1-1m-4 5a1 1 0 0 1 .993.883L9 8v2a3 3 0 0 0 6 0V8a1 1 0 0 1 1.993-.117L17 8v2a5 5 0 0 1-4 4.9V19h2a1 1 0 0 1 .117 1.993L15 21H9a1 1 0 0 1-.117-1.993L9 19h2v-4.1A5 5 0 0 1 7 10V8a1 1 0 0 1 1-1" />
               </svg>
             </div>
-            <span className="text-xs font-medium">Succulents</span>
+            <span className="text-xs font-medium">{T.home_succulents}</span>
           </button>
 
           {/* Trees */}
@@ -119,7 +127,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <path d="M12 2L4 16h4v4h8v-4h4L12 2zm0 3.8L16.2 14H7.8L12 5.8z" />
               </svg>
             </div>
-            <span className="text-xs font-medium">Trees</span>
+            <span className="text-xs font-medium">{T.home_trees}</span>
           </button>
         </div>
       </section>
@@ -132,10 +140,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         >
           <div className="relative z-10 space-y-2 max-w-[60%]">
             <h3 className="text-xl md:text-2xl font-bold tracking-tight">
-              Health of your plants
+              {T.home_scanBanner}
             </h3>
             <p className="text-xs md:text-sm text-[#cdecae] leading-relaxed">
-              Scan your plant to detect problems early and keep them thriving.
+              {T.home_scanBannerSub}
             </p>
             <button
               onClick={(e) => {
@@ -145,7 +153,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               className="mt-3 inline-flex items-center gap-2 bg-white text-[#4c6635] px-4 py-2.5 rounded-full font-semibold text-xs md:text-sm hover:bg-[#f2f4f1] active:scale-95 transition-all shadow-md"
             >
               <Scan className="w-4 h-4" />
-              <span>Scan Now</span>
+              <span>{T.home_scanBtn}</span>
             </button>
           </div>
 
@@ -164,15 +172,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <div className="flex justify-between items-end">
           <div>
             <h3 className="text-xl font-bold text-[#191c1b] tracking-tight">
-              Common Problems
+              {T.home_commonProblems}
             </h3>
-            <p className="text-xs text-[#44483e]">Tap any condition to view full treatment protocol</p>
+            <p className="text-xs text-[#44483e]">{T.home_commonProblemsSub}</p>
           </div>
           <button
             onClick={() => setSearchQuery('')}
             className="text-xs md:text-sm font-semibold text-[#4c6635] hover:underline cursor-pointer"
           >
-            See All
+            {T.home_seeAll}
           </button>
         </div>
 
@@ -211,12 +219,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     {isHighRisk ? (
                       <div className="flex items-center gap-1 text-[#ba1a1a] bg-[#ffdad6] px-2 py-0.5 rounded-full text-[11px] font-semibold">
                         <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>High Risk</span>
+                        <span>{T.home_highRisk}</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 text-[#253c10] bg-[#cdecae] px-2 py-0.5 rounded-full text-[11px] font-semibold">
                         <Info className="w-3.5 h-3.5" />
-                        <span>Treatable</span>
+                        <span>{T.home_treatable}</span>
                       </div>
                     )}
                     <span className="text-[11px] text-[#74796d]">
@@ -234,20 +242,17 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       <section className="bg-gradient-to-r from-[#d2e9ce]/60 to-[#dde5d8]/60 rounded-2xl p-5 border border-[#8ba870]/30 flex items-center justify-between">
         <div className="space-y-1">
           <span className="text-[11px] font-bold text-[#354e1f] uppercase tracking-wider">
-            Garden Flora Directory
+            {T.home_floraDir}
           </span>
           <h4 className="text-base font-bold text-[#191c1b]">
-            Explore 50+ Blooming Flower Varieties
+            {T.home_floraDirSub}
           </h4>
-          <p className="text-xs text-[#44483e]">
-            Care instructions for Gladiolus, Hybrid Roses, Delphiniums & more.
-          </p>
         </div>
         <button
           onClick={() => setScreen('category_flowers')}
           className="px-4 py-2 bg-[#4c6635] text-white rounded-xl text-xs font-semibold hover:bg-[#354e1f] active:scale-95 transition-all shrink-0 ml-3"
         >
-          View Catalog
+          {T.home_exploreCatalog}
         </button>
       </section>
     </div>

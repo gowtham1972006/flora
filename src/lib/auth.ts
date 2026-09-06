@@ -8,6 +8,9 @@ export interface AuthError {
 export interface AuthResult {
   success: boolean;
   error?: AuthError;
+  /** True when signup succeeded but email confirmation is still required.
+   *  In this case data.session is null — the user is NOT yet authenticated. */
+  needsEmailConfirmation?: boolean;
 }
 
 // ─── Sign Up ──────────────────────────────────────────────────────────────────
@@ -16,7 +19,7 @@ export async function signUp(
   password: string,
   name: string
 ): Promise<AuthResult> {
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: email.trim().toLowerCase(),
     password,
     options: {
@@ -25,7 +28,11 @@ export async function signUp(
   });
 
   if (error) return { success: false, error: { message: error.message } };
-  return { success: true };
+
+  // data.session is null when Supabase requires email confirmation before
+  // granting a session. data.user will exist but is not yet authenticated.
+  const needsEmailConfirmation = !data.session;
+  return { success: true, needsEmailConfirmation };
 }
 
 // ─── Sign In (email + password) ───────────────────────────────────────────────
@@ -33,12 +40,22 @@ export async function signIn(
   email: string,
   password: string
 ): Promise<AuthResult> {
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: email.trim().toLowerCase(),
     password,
   });
 
-  if (error) return { success: false, error: { message: error.message } };
+  if (error) {
+    // Surface the full error in dev so we can diagnose the real cause
+    console.error('[Flora] signInWithPassword failed:', {
+      message: error.message,
+      status: error.status,
+      code: (error as { code?: string }).code,
+    });
+    return { success: false, error: { message: error.message } };
+  }
+
+  console.info('[Flora] signInWithPassword succeeded. User:', data.user?.id);
   return { success: true };
 }
 
