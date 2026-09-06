@@ -62,14 +62,13 @@ export async function signIn(
 // ─── Google OAuth ─────────────────────────────────────────────────────────────
 // Supabase handles the full OAuth redirect flow.
 // After redirect the client detects the session from the URL automatically.
+// redirectTo uses window.location.origin (runtime) so that localhost, Vercel,
+// and any future domain all self-configure without any env-var dependency.
 export async function signInWithGoogle(): Promise<AuthResult> {
-  const redirectTo =
-    (import.meta.env.VITE_APP_URL as string | undefined) ?? window.location.origin;
-
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${redirectTo}/auth/callback`,
+      redirectTo: `${window.location.origin}/auth/callback`,
       queryParams: {
         access_type: 'offline',
         prompt: 'consent',
@@ -96,13 +95,12 @@ export async function getCurrentUserId(): Promise<string | null> {
 }
 
 // ─── Password reset email ─────────────────────────────────────────────────────
+// redirectTo uses window.location.origin so the reset link always points back
+// to whatever domain the user is on (localhost, Vercel, custom domain, etc.).
 export async function sendPasswordReset(email: string): Promise<AuthResult> {
-  const redirectTo =
-    (import.meta.env.VITE_APP_URL as string | undefined) ?? window.location.origin;
-
   const { error } = await supabase.auth.resetPasswordForEmail(
     email.trim().toLowerCase(),
-    { redirectTo: `${redirectTo}/auth/reset-password` }
+    { redirectTo: `${window.location.origin}/auth/reset-password` }
   );
 
   if (error) return { success: false, error: { message: error.message } };
