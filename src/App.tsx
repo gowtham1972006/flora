@@ -354,6 +354,7 @@ export const App: React.FC = () => {
                 navigateTo('diagnosis');
               }}
               T={T}
+              lang={lang}
               weatherSlot={
                 <WeatherCard weather={weather} T={T} />
               }
@@ -376,6 +377,7 @@ export const App: React.FC = () => {
               }}
               favorites={favoritesArray}
               onToggleFavorite={handleToggleFavorite}
+              lang={lang}
             />
           )}
 
@@ -386,6 +388,8 @@ export const App: React.FC = () => {
               onToggleFavorite={handleToggleFavorite}
               onAddToSchedule={handleAddTask}
               onBack={handleBack}
+              lang={lang}
+              T={T}
             />
           )}
 
@@ -394,6 +398,8 @@ export const App: React.FC = () => {
               disease={selectedDisease}
               onAddToSchedule={handleAddTask}
               onBack={handleBack}
+              lang={lang}
+              T={T}
             />
           )}
 

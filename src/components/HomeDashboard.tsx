@@ -4,18 +4,93 @@ import { fetchDiseases } from '../lib/diagnosis';
 import { sampleDiseases } from '../data/plantData';
 import { Search, Scan, AlertTriangle, Info, ArrowRight, Sparkles } from 'lucide-react';
 import type { Translations } from '../lib/i18n';
+import type { LangCode } from '../lib/i18n';
+import { useContentTranslation } from '../hooks/useContentTranslation';
 
 interface HomeDashboardProps {
   setScreen: (screen: ScreenType) => void;
   onSelectDisease: (disease: DiseaseItem) => void;
   T: Translations;
+  lang: LangCode;
   weatherSlot?: React.ReactNode;
 }
 
+// ─── Per-disease card with inline translation ─────────────────────────────────
+const DiseaseCard: React.FC<{
+  disease: DiseaseItem;
+  lang: LangCode;
+  T: Translations;
+  onClick: () => void;
+}> = ({ disease, lang, T, onClick }) => {
+  const { translated, loading } = useContentTranslation({
+    entityType: 'disease',
+    entityId: disease.id,
+    fields: {
+      name: disease.name,
+      description: disease.description,
+    },
+    lang,
+  });
+
+  const tName        = translated.name        ?? disease.name;
+  const tDescription = translated.description ?? disease.description;
+  const isHighRisk   = disease.severity === 'High';
+
+  return (
+    <div
+      onClick={onClick}
+      className="bg-white rounded-2xl p-4 shadow-sm border border-[#e1e3e0] hover:shadow-md hover:border-[#8ba870] transition-all cursor-pointer flex items-start gap-4 active:scale-[0.99]"
+    >
+      <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-[#eceeeb] border border-[#e1e3e0]">
+        <img
+          src={disease.image}
+          alt={tName}
+          className="w-full h-full object-cover"
+        />
+      </div>
+
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center justify-between">
+          <h4 className="font-bold text-base text-[#191c1b] truncate">
+            {loading
+              ? <span className="inline-block bg-[#e7e9e6] rounded animate-pulse w-28 h-4" />
+              : tName}
+          </h4>
+          <ArrowRight className="w-4 h-4 text-[#74796d] shrink-0" />
+        </div>
+        <p className="text-xs text-[#44483e] line-clamp-2 leading-relaxed">
+          {loading
+            ? <span className="inline-block bg-[#e7e9e6] rounded animate-pulse w-full h-3" />
+            : tDescription}
+        </p>
+
+        <div className="flex items-center gap-1.5 pt-1">
+          {isHighRisk ? (
+            <div className="flex items-center gap-1 text-[#ba1a1a] bg-[#ffdad6] px-2 py-0.5 rounded-full text-[11px] font-semibold">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>{T.home_highRisk}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-[#253c10] bg-[#cdecae] px-2 py-0.5 rounded-full text-[11px] font-semibold">
+              <Info className="w-3.5 h-3.5" />
+              <span>{T.home_treatable}</span>
+            </div>
+          )}
+          <span className="text-[11px] text-[#74796d]">
+            {disease.causes[0]?.title}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main HomeDashboard ───────────────────────────────────────────────────────
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   setScreen,
   onSelectDisease,
   T,
+  lang,
   weatherSlot,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,6 +104,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       .catch(() => setAllDiseases(Object.values(sampleDiseases)));
   }, []);
 
+  // Search runs against source-language (English) fields
   const filteredDiseases = allDiseases.filter(
     (d) =>
       d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -132,7 +208,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       </section>
 
-      {/* Health of your plants Banner (Image 13) */}
+      {/* Health of your plants Banner */}
       <section>
         <div
           onClick={() => setScreen('scan')}
@@ -185,56 +261,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredDiseases.map((disease) => {
-            const isHighRisk = disease.severity === 'High';
-            return (
-              <div
-                key={disease.id}
-                onClick={() => {
-                  onSelectDisease(disease);
-                  setScreen('diagnosis');
-                }}
-                className="bg-white rounded-2xl p-4 shadow-sm border border-[#e1e3e0] hover:shadow-md hover:border-[#8ba870] transition-all cursor-pointer flex items-start gap-4 active:scale-[0.99]"
-              >
-                <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-[#eceeeb] border border-[#e1e3e0]">
-                  <img
-                    src={disease.image}
-                    alt={disease.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-base text-[#191c1b] truncate">
-                      {disease.name}
-                    </h4>
-                    <ArrowRight className="w-4 h-4 text-[#74796d] shrink-0" />
-                  </div>
-                  <p className="text-xs text-[#44483e] line-clamp-2 leading-relaxed">
-                    {disease.description}
-                  </p>
-
-                  <div className="flex items-center gap-1.5 pt-1">
-                    {isHighRisk ? (
-                      <div className="flex items-center gap-1 text-[#ba1a1a] bg-[#ffdad6] px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>{T.home_highRisk}</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-[#253c10] bg-[#cdecae] px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                        <Info className="w-3.5 h-3.5" />
-                        <span>{T.home_treatable}</span>
-                      </div>
-                    )}
-                    <span className="text-[11px] text-[#74796d]">
-                      {disease.causes[0]?.title}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {filteredDiseases.map((disease) => (
+            <DiseaseCard
+              key={disease.id}
+              disease={disease}
+              lang={lang}
+              T={T}
+              onClick={() => {
+                onSelectDisease(disease);
+                setScreen('diagnosis');
+              }}
+            />
+          ))}
         </div>
       </section>
 

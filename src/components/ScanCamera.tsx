@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DiseaseItem, ScreenType } from '../types';
-import { diagnoseImage } from '../lib/diagnosis';
+import { diagnoseImage, isFederatedMLEnabled } from '../lib/diagnosis';
+import type { DiagnosisResult } from '../lib/diagnosis';
 import {
   X, Image as ImageIcon, Zap, ZapOff, SwitchCamera,
   AlertCircle, RefreshCw, ChevronRight, Check,
-  FlaskConical, Leaf, RotateCcw, Loader2, CloudSun,
+  FlaskConical, Leaf, RotateCcw, Loader2, CloudSun, Brain,
 } from 'lucide-react';
 import type { Translations } from '../lib/i18n';
 import type { UseWeatherResult } from '../hooks/useWeather';
@@ -53,6 +54,10 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
   const [progress, setProgress]         = useState(0);   // 0-100
   const [result, setResult]             = useState<DiseaseItem | null>(null);
   const [scanError, setScanError]       = useState('');
+
+  // ── Federated ML state ──────────────────────────────────────────────────────
+  const [diagnosisSource, setDiagnosisSource] = useState<string | undefined>(undefined);
+  const [gradcamBase64, setGradcamBase64] = useState<string | null>(null);
 
   // ── Shutter flash ───────────────────────────────────────────────────────────
   const [shutterFlash, setShutterFlash] = useState(false);
@@ -194,12 +199,14 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
     }, 60);
 
     try {
-      const { disease } = await diagnoseImage(imageData, userId ?? 'anonymous');
+      const diagResult = await diagnoseImage(imageData, userId ?? 'anonymous');
       clearInterval(progressInterval);
       clearStepTimers();
       setProgress(100);
+      setDiagnosisSource(diagResult.source);
+      setGradcamBase64(diagResult.gradcamBase64 ?? null);
       setTimeout(() => {
-        setResult(disease);
+        setResult(diagResult.disease);
         setPhase('done');
       }, 300);
     } catch (err) {
@@ -512,6 +519,15 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
                   <span className="text-[10px] font-semibold text-[#cdecae]">
                     {result.confidenceScore ?? 92}% match
                   </span>
+                  {diagnosisSource && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                      diagnosisSource === 'federated_ml'
+                        ? 'bg-purple-500/20 text-purple-300'
+                        : 'bg-blue-500/20 text-blue-300'
+                    }`}>
+                      {diagnosisSource === 'federated_ml' ? '🧠 ML' : diagnosisSource === 'gemini_edge' || diagnosisSource === 'gemini_client' ? '✨ Gemini' : ''}
+                    </span>
+                  )}
                 </div>
                 <h3 className="font-bold text-white text-base leading-tight truncate">{result.name}</h3>
                 <p className="text-xs text-white/55 truncate mt-0.5">{result.commonName}</p>
@@ -526,6 +542,21 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
                   <p className="text-xs font-semibold text-white/80">{result.causes[0].title}</p>
                   <p className="text-[11px] text-white/50 mt-0.5 leading-relaxed">{result.causes[0].subtitle}</p>
                 </div>
+              </div>
+            )}
+
+            {/* Grad-CAM heatmap (federated ML only) */}
+            {gradcamBase64 && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Brain className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-[11px] font-semibold text-white/70">Disease Region Analysis (Grad-CAM)</span>
+                </div>
+                <img
+                  src={`data:image/png;base64,${gradcamBase64}`}
+                  alt="Grad-CAM heatmap"
+                  className="w-full rounded-xl border border-white/10"
+                />
               </div>
             )}
 

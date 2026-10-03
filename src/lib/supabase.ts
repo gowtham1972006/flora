@@ -94,17 +94,31 @@ export interface DbScanHistory {
   created_at: string;
 }
 
+export interface DbContentTranslation {
+  id: string;
+  entity_type: 'plant' | 'disease';
+  entity_id: string;
+  field_name: string;
+  source_language: string;
+  target_language: string;
+  source_text: string;
+  translated_text: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Database type map for createClient generic ───────────────────────────────
 export interface Database {
   public: {
     Tables: {
-      profiles:      { Row: DbProfile;      Insert: Partial<DbProfile>;      Update: Partial<DbProfile> };
-      plants:        { Row: DbPlant;         Insert: Partial<DbPlant>;         Update: Partial<DbPlant> };
-      diseases:      { Row: DbDisease;       Insert: Partial<DbDisease>;       Update: Partial<DbDisease> };
-      favorites:     { Row: DbFavorite;      Insert: Partial<DbFavorite>;      Update: Partial<DbFavorite> };
-      care_tasks:    { Row: DbCareTask;      Insert: Partial<DbCareTask>;      Update: Partial<DbCareTask> };
-      notifications: { Row: DbNotification;  Insert: Partial<DbNotification>;  Update: Partial<DbNotification> };
-      scan_history:  { Row: DbScanHistory;   Insert: Partial<DbScanHistory>;   Update: Partial<DbScanHistory> };
+      profiles:             { Row: DbProfile;             Insert: Partial<DbProfile>;             Update: Partial<DbProfile> };
+      plants:               { Row: DbPlant;               Insert: Partial<DbPlant>;               Update: Partial<DbPlant> };
+      diseases:             { Row: DbDisease;             Insert: Partial<DbDisease>;             Update: Partial<DbDisease> };
+      favorites:            { Row: DbFavorite;            Insert: Partial<DbFavorite>;            Update: Partial<DbFavorite> };
+      care_tasks:           { Row: DbCareTask;            Insert: Partial<DbCareTask>;            Update: Partial<DbCareTask> };
+      notifications:        { Row: DbNotification;        Insert: Partial<DbNotification>;        Update: Partial<DbNotification> };
+      scan_history:         { Row: DbScanHistory;         Insert: Partial<DbScanHistory>;         Update: Partial<DbScanHistory> };
+      content_translations: { Row: DbContentTranslation; Insert: Partial<DbContentTranslation>;  Update: Partial<DbContentTranslation> };
     };
     Functions: {
       // RPC defined in supabase/migrations/003_fixes.sql

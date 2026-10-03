@@ -72,6 +72,22 @@ export interface DiagnosisResult {
   disease: DiseaseItem;
   confidenceScore: number;
   rawGeminiResponse?: string;
+  /** Which engine produced this result */
+  source?: 'gemini_edge' | 'federated_ml' | 'gemini_client' | 'fallback';
+  /** Grad-CAM overlay base64 (only from federated ML) */
+  gradcamBase64?: string | null;
+}
+
+// ─── Federated ML helpers ─────────────────────────────────────────────────────
+const FEDERATED_ML_ENABLED =
+  (import.meta.env.VITE_ENABLE_FEDERATED_ML as string)?.toLowerCase() === 'true';
+
+const FEDERATED_ML_API_URL =
+  (import.meta.env.VITE_FEDERATED_ML_API_URL as string) || 'http://localhost:5000';
+
+/** Check whether the federated ML inference path is active. */
+export function isFederatedMLEnabled(): boolean {
+  return FEDERATED_ML_ENABLED;
 }
 
 // ─── Main entry point: try Edge Function, fall back gracefully ────────────────
@@ -101,6 +117,7 @@ export async function diagnoseImage(
       disease: { ...disease!, confidenceScore: data.confidenceScore },
       confidenceScore: data.confidenceScore,
       rawGeminiResponse: data.rawResponse,
+      source: 'gemini_edge',
     };
     void saveScanHistory(userId, null, data.diseaseId, result.disease, data.confidenceScore);
     return result;
@@ -108,7 +125,17 @@ export async function diagnoseImage(
     console.warn('[Flora] Edge Function unavailable:', (edgeErr as Error)?.message);
   }
 
-  // 2. Try client-side Gemini (only if VITE_GEMINI_API_KEY is set)
+  // 2. Try Federated ML model (only if enabled via feature flag)
+  if (FEDERATED_ML_ENABLED) {
+    try {
+      const mlResult = await runFederatedMLInference(base64Data, userId);
+      if (mlResult) return mlResult;
+    } catch (mlErr) {
+      console.warn('[Flora] Federated ML unavailable:', (mlErr as Error)?.message);
+    }
+  }
+
+  // 3. Try client-side Gemini (only if VITE_GEMINI_API_KEY is set)
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
   if (apiKey) {
     try {
@@ -119,8 +146,61 @@ export async function diagnoseImage(
     }
   }
 
-  // 3. Hardcoded demo fallback — always works, no network needed
+  // 4. Hardcoded demo fallback — always works, no network needed
   return buildFallback(userId);
+}
+
+// ─── Federated ML inference (EfficientNetB0 via Flask API) ────────────────────
+async function runFederatedMLInference(
+  base64Data: string,
+  userId: string
+): Promise<DiagnosisResult | null> {
+  try {
+    const res = await fetch(`${FEDERATED_ML_API_URL}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Data, gradcam: true }),
+      signal: AbortSignal.timeout(10000), // 10s timeout
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as Record<string, unknown>;
+      throw new Error((err.error as string) ?? `HTTP ${res.status}`);
+    }
+
+    const data = await res.json() as {
+      predicted_class: string;
+      confidence: number;
+      gradcam_base64?: string | null;
+    };
+
+    // Map the ML class name to a known disease ID
+    const classNameLower = data.predicted_class.toLowerCase().replace(/[_ ]+/g, '-');
+    const diseaseIdMap: Record<string, string> = {
+      'chlorosis': 'chlorosis',
+      'wilting': 'wilting',
+      'rust': 'rust',
+      'powdery-mildew': 'powdery-mildew',
+      'healthy': 'chlorosis',
+    };
+    const diseaseId = diseaseIdMap[classNameLower] ?? 'chlorosis';
+
+    const disease = await fetchDiseaseById(diseaseId);
+    if (!disease) return null;
+
+    const score = Math.max(0, Math.min(100, Math.round(data.confidence)));
+    void saveScanHistory(userId, null, diseaseId, disease, score);
+
+    return {
+      disease: { ...disease, confidenceScore: score },
+      confidenceScore: score,
+      source: 'federated_ml',
+      gradcamBase64: data.gradcam_base64 ?? null,
+    };
+  } catch (err) {
+    console.warn('[Flora] Federated ML inference failed:', (err as Error)?.message);
+    return null;
+  }
 }
 
 // ─── Client-side Gemini call ──────────────────────────────────────────────────
@@ -174,7 +254,7 @@ Reply ONLY with valid JSON:
 
   const score = Math.max(0, Math.min(100, parsed.confidenceScore ?? 85));
   void saveScanHistory(userId, null, diseaseId, disease, score);
-  return { disease: { ...disease, confidenceScore: score }, confidenceScore: score, rawGeminiResponse: text };
+  return { disease: { ...disease, confidenceScore: score }, confidenceScore: score, rawGeminiResponse: text, source: 'gemini_client' };
 }
 
 // ─── Always-available demo fallback ──────────────────────────────────────────
@@ -182,7 +262,7 @@ async function buildFallback(userId: string): Promise<DiagnosisResult> {
   const disease = await fetchDiseaseById('chlorosis');
   const score = 92;
   void saveScanHistory(userId, null, 'chlorosis', disease!, score);
-  return { disease: { ...disease!, confidenceScore: score }, confidenceScore: score };
+  return { disease: { ...disease!, confidenceScore: score }, confidenceScore: score, source: 'fallback' };
 }
 
 // ─── Persist to scan_history (fire-and-forget) ────────────────────────────────

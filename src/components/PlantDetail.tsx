@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { PlantItem } from '../types';
-import { Sun, Droplets, Sprout, Heart, ArrowRight, Check, Plus, Calendar } from 'lucide-react';
+import { Sun, Droplets, Sprout, Heart, ArrowRight, Check, Calendar } from 'lucide-react';
+import type { LangCode } from '../lib/i18n';
+import type { Translations } from '../lib/i18n';
+import { useContentTranslation } from '../hooks/useContentTranslation';
 
 interface PlantDetailProps {
   plant: PlantItem;
@@ -8,7 +11,20 @@ interface PlantDetailProps {
   onToggleFavorite: (id: string) => void;
   onAddToSchedule: (plantName: string, taskType: 'Water' | 'Fertilize' | 'Prune' | 'Mist') => void;
   onBack: () => void;
+  lang: LangCode;
+  T: Translations;
 }
+
+/** Inline skeleton shimmer for loading state */
+const TextSkeleton: React.FC<{ width?: string; className?: string }> = ({
+  width = 'w-32',
+  className = '',
+}) => (
+  <span
+    className={`inline-block bg-[#e7e9e6] rounded animate-pulse ${width} ${className}`}
+    style={{ minHeight: '1em' }}
+  />
+);
 
 export const PlantDetail: React.FC<PlantDetailProps> = ({
   plant,
@@ -16,12 +32,35 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
   onToggleFavorite,
   onAddToSchedule,
   onBack,
+  lang,
+  T,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [addedToast, setAddedToast] = useState(false);
 
+  // ── Dynamic translation of all human-readable plant fields ─────────────────
+  const { translated, loading } = useContentTranslation({
+    entityType: 'plant',
+    entityId: plant.id,
+    fields: {
+      name: plant.name,
+      description: plant.description,
+      sunlight: plant.sunlight,
+      water: plant.water,
+      fertilizing: plant.fertilizing,
+    },
+    lang,
+  });
+
+  // Translated values (fall back to originals if not ready)
+  const tName        = translated.name        ?? plant.name;
+  const tDescription = translated.description ?? plant.description;
+  const tSunlight    = translated.sunlight    ?? plant.sunlight;
+  const tWater       = translated.water       ?? plant.water;
+  const tFertilizing = translated.fertilizing ?? plant.fertilizing;
+
   const handleAddSchedule = () => {
-    onAddToSchedule(plant.name, 'Water');
+    onAddToSchedule(plant.name, 'Water'); // always use English name for task key
     setAddedToast(true);
     setTimeout(() => setAddedToast(false), 3000);
   };
@@ -32,7 +71,7 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
       <section className="relative w-full h-[380px] md:h-[480px] rounded-b-[36px] md:rounded-[36px] overflow-hidden shadow-botanical -mx-4 md:mx-0 w-[calc(100%+2rem)] md:w-full">
         <img
           src={plant.image}
-          alt={plant.name}
+          alt={tName}
           className="w-full h-full object-cover"
         />
         {/* Soft bottom gradient overlay */}
@@ -48,7 +87,7 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
               {plant.category} {plant.subType ? `• ${plant.subType}` : ''}
             </span>
             <h1 className="text-3xl md:text-4xl font-bold text-[#191c1b] tracking-tight">
-              {plant.name}
+              {loading ? <TextSkeleton width="w-48" className="h-9" /> : tName}
             </h1>
             <p className="text-base text-[#44483e] font-medium">
               {plant.scientificName}
@@ -72,7 +111,7 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
         {/* Care Details (Bento Grid) */}
         <section className="space-y-3">
           <h3 className="text-xl font-bold text-[#191c1b] tracking-tight">
-            Care Details
+            {T.care_title}
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
@@ -82,8 +121,13 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
                 <Sun className="w-6 h-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-semibold text-[#191c1b]">Sunlight</span>
-                <span className="text-xs text-[#44483e] mt-0.5">{plant.sunlight}</span>
+                <span className="text-sm font-semibold text-[#191c1b]">
+                  {/* "Sunlight" — use care_water key pattern; add sunlight to T or use hardcoded label */}
+                  Sunlight
+                </span>
+                <span className="text-xs text-[#44483e] mt-0.5">
+                  {loading ? <TextSkeleton width="w-24" /> : tSunlight}
+                </span>
               </div>
             </div>
 
@@ -93,8 +137,10 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
                 <Droplets className="w-6 h-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-semibold text-[#191c1b]">Water</span>
-                <span className="text-xs text-[#44483e] mt-0.5">{plant.water}</span>
+                <span className="text-sm font-semibold text-[#191c1b]">{T.care_water}</span>
+                <span className="text-xs text-[#44483e] mt-0.5">
+                  {loading ? <TextSkeleton width="w-24" /> : tWater}
+                </span>
               </div>
             </div>
 
@@ -104,8 +150,10 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
                 <Sprout className="w-6 h-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-semibold text-[#191c1b]">Fertilizing</span>
-                <span className="text-xs text-[#44483e] mt-0.5">{plant.fertilizing}</span>
+                <span className="text-sm font-semibold text-[#191c1b]">{T.care_fertilize}</span>
+                <span className="text-xs text-[#44483e] mt-0.5">
+                  {loading ? <TextSkeleton width="w-24" /> : tFertilizing}
+                </span>
               </div>
             </div>
           </div>
@@ -116,23 +164,34 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
           <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-[#8ba870]/10 rounded-full blur-2xl pointer-events-none" />
 
           <h3 className="text-xl font-bold text-[#191c1b] tracking-tight relative z-10">
+            {/* "Description" label — static UI */}
             Description
           </h3>
 
           <div className="relative z-10 space-y-3 text-sm text-[#44483e] leading-relaxed">
-            <p>
-              {expanded
-                ? plant.description
-                : `${plant.description.slice(0, 180)}...`}
-            </p>
+            {loading ? (
+              <div className="space-y-2">
+                <TextSkeleton width="w-full" className="h-4" />
+                <TextSkeleton width="w-full" className="h-4" />
+                <TextSkeleton width="w-3/4" className="h-4" />
+              </div>
+            ) : (
+              <p>
+                {expanded
+                  ? tDescription
+                  : `${tDescription.slice(0, 180)}...`}
+              </p>
+            )}
 
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="inline-flex items-center text-sm font-bold text-[#4c6635] hover:text-[#354e1f] transition-colors group cursor-pointer"
-            >
-              <span>{expanded ? 'Show Less' : 'Read More'}</span>
-              <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
-            </button>
+            {!loading && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="inline-flex items-center text-sm font-bold text-[#4c6635] hover:text-[#354e1f] transition-colors group cursor-pointer"
+              >
+                <span>{expanded ? 'Show Less' : 'Read More'}</span>
+                <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+              </button>
+            )}
           </div>
         </section>
 
@@ -145,12 +204,12 @@ export const PlantDetail: React.FC<PlantDetailProps> = ({
             {addedToast ? (
               <>
                 <Check className="w-5 h-5 text-[#cdecae]" />
-                <span>Added to Care Schedule!</span>
+                <span>{T.diag_added}</span>
               </>
             ) : (
               <>
                 <Calendar className="w-5 h-5" />
-                <span>Add to Care Schedule</span>
+                <span>{T.catalog_addSchedule}</span>
               </>
             )}
           </button>

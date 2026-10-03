@@ -1,10 +1,25 @@
 node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
-supabase/.temp/
-.vercel
+# build/
+# dist/
+# coverage/
+# .DS_Store
+# *.log
+# .env*
+# !.env.example
+# supabase/.temp/
+# .vercel
+
+# # ── Federated ML (Python) ────────────────────────────
+# federated_ml/data/raw/
+# federated_ml/data/processed/
+# federated_ml/data/clients/
+# !federated_ml/data/README.md
+# federated_ml/checkpoints/
+# federated_ml/logs/
+# __pycache__/
+# *.pyc
+# *.pyo
+# *.pt
+# *.pth
+# *.h5
+# *.onnx
