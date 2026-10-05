@@ -4,7 +4,7 @@ import { diagnoseImage, isFederatedMLEnabled } from '../lib/diagnosis';
 import type { DiagnosisResult } from '../lib/diagnosis';
 import {
   X, Image as ImageIcon, Zap, ZapOff, SwitchCamera,
-  AlertCircle, RefreshCw, ChevronRight, Check,
+  AlertCircle, RefreshCw, ChevronRight, ChevronUp, ChevronDown, Check,
   FlaskConical, Leaf, RotateCcw, Loader2, CloudSun, Brain,
 } from 'lucide-react';
 import type { Translations } from '../lib/i18n';
@@ -31,29 +31,68 @@ const SCAN_STEPS = [
 
 // Severity badge colors
 const SEVERITY_COLOR: Record<string, string> = {
-  High:   'bg-red-500/90 text-white',
+  High: 'bg-red-500/90 text-white',
   Medium: 'bg-amber-400/90 text-[#191c1b]',
-  Low:    'bg-green-500/90 text-white',
+  Low: 'bg-green-500/90 text-white',
 };
 
 export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, userId, T, weather }) => {
   // ── Camera state ────────────────────────────────────────────────────────────
-  const [cameraState, setCameraState]   = useState<CameraState>('requesting');
-  const [cameraError, setCameraError]   = useState('');
-  const [facingMode, setFacingMode]     = useState<'environment' | 'user'>('environment');
-  const [torchOn, setTorchOn]           = useState(false);
-  const [hasTorch, setHasTorch]         = useState(false);
+  const [cameraState, setCameraState] = useState<CameraState>('requesting');
+  const [cameraError, setCameraError] = useState('');
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [torchOn, setTorchOn] = useState(false);
+  const [hasTorch, setHasTorch] = useState(false);
 
   // ── Image / capture state ───────────────────────────────────────────────────
-  const [uploadedImage, setUploadedImage]   = useState<string | null>(null);
-  const [capturedFrame, setCapturedFrame]   = useState<string | null>(null);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [capturedFrame, setCapturedFrame] = useState<string | null>(null);
 
   // ── Scan flow state ─────────────────────────────────────────────────────────
-  const [phase, setPhase]               = useState<ScanPhase>('idle');
-  const [stepIdx, setStepIdx]           = useState(0);
-  const [progress, setProgress]         = useState(0);   // 0-100
-  const [result, setResult]             = useState<DiseaseItem | null>(null);
-  const [scanError, setScanError]       = useState('');
+  const [phase, setPhase] = useState<ScanPhase>('idle');
+  const [stepIdx, setStepIdx] = useState(0);
+  const [progress, setProgress] = useState(0);   // 0-100
+  const [result, setResult] = useState<DiseaseItem | null>(null);
+  const [scanError, setScanError] = useState('');
+
+  // ── Drag & Expand state for Bottom Sheet ────────────────────────────────────
+  const [isExpanded, setIsExpanded] = useState(false);
+  const dragStartY = useRef<number | null>(null);
+  const hasDragged = useRef<boolean>(false);
+
+  const handleDragStart = (clientY: number) => {
+    dragStartY.current = clientY;
+    hasDragged.current = false;
+  };
+
+  const handleDragMove = (clientY: number) => {
+    if (dragStartY.current === null) return;
+    const diff = clientY - dragStartY.current;
+    if (Math.abs(diff) > 10) {
+      hasDragged.current = true;
+    }
+  };
+
+  const handleDragEnd = (clientY: number) => {
+    if (dragStartY.current === null) return;
+    const diff = clientY - dragStartY.current;
+    // Dragged up (negative diff) by > 30px -> expand
+    if (diff < -30) {
+      setIsExpanded(true);
+    }
+    // Dragged down (positive diff) by > 30px -> collapse
+    else if (diff > 30) {
+      setIsExpanded(false);
+    }
+    dragStartY.current = null;
+  };
+
+  const handleHeaderClick = () => {
+    if (!hasDragged.current) {
+      setIsExpanded(prev => !prev);
+    }
+    hasDragged.current = false;
+  };
 
   // ── Federated ML state ──────────────────────────────────────────────────────
   const [diagnosisSource, setDiagnosisSource] = useState<string | undefined>(undefined);
@@ -63,11 +102,11 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
   const [shutterFlash, setShutterFlash] = useState(false);
 
   // ── Refs ────────────────────────────────────────────────────────────────────
-  const videoRef    = useRef<HTMLVideoElement>(null);
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
-  const streamRef   = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const stepTimers  = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const stepTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // ── Stop stream ─────────────────────────────────────────────────────────────
   const stopStream = useCallback(() => {
@@ -92,7 +131,7 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+        await videoRef.current.play().catch(() => { });
       }
       // Check torch support
       const track = stream.getVideoTracks()[0];
@@ -117,7 +156,7 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
   useEffect(() => {
     if (!uploadedImage) startCamera(facingMode);
     return stopStream;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadedImage, facingMode]);
 
   // ── Toggle torch ────────────────────────────────────────────────────────────
@@ -134,10 +173,10 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
 
   // ── Grab snapshot from video ─────────────────────────────────────────────────
   const grabFrame = useCallback((): string | null => {
-    const video  = videoRef.current;
+    const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
-    canvas.width  = video.videoWidth  || 1280;
+    canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
@@ -360,9 +399,8 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
         {!uploadedImage && cameraState === 'active' && hasTorch ? (
           <button
             onClick={toggleTorch}
-            className={`w-10 h-10 rounded-full backdrop-blur-md border border-white/15 flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
-              torchOn ? 'bg-[#cdecae] text-[#191c1b]' : 'bg-black/50 text-white'
-            }`}
+            className={`w-10 h-10 rounded-full backdrop-blur-md border border-white/15 flex items-center justify-center active:scale-90 transition-all cursor-pointer ${torchOn ? 'bg-[#cdecae] text-[#191c1b]' : 'bg-black/50 text-white'
+              }`}
           >
             {torchOn ? <Zap className="w-5 h-5 fill-current" /> : <ZapOff className="w-5 h-5" />}
           </button>
@@ -375,11 +413,11 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
       {weather?.data && weather.data.alerts.length > 0 && (() => {
         const alert = weather.data!.alerts[0];
         const alertMessages: Record<string, string> = {
-          weather_alertHeat:     T?.weather_alertHeat     ?? '🌡️ Heat stress warning',
-          weather_alertFrost:    T?.weather_alertFrost    ?? '🌨️ Frost risk tonight',
-          weather_alertRain:     T?.weather_alertRain     ?? '🌧️ Heavy rain expected',
-          weather_alertDrought:  T?.weather_alertDrought  ?? '🌵 Dry spell ahead',
-          weather_alertWind:     T?.weather_alertWind     ?? '💨 Strong winds',
+          weather_alertHeat: T?.weather_alertHeat ?? '🌡️ Heat stress warning',
+          weather_alertFrost: T?.weather_alertFrost ?? '🌨️ Frost risk tonight',
+          weather_alertRain: T?.weather_alertRain ?? '🌧️ Heavy rain expected',
+          weather_alertDrought: T?.weather_alertDrought ?? '🌵 Dry spell ahead',
+          weather_alertWind: T?.weather_alertWind ?? '💨 Strong winds',
           weather_alertHumidity: T?.weather_alertHumidity ?? '💧 High humidity',
         };
         return (
@@ -405,23 +443,21 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
           <div className="absolute inset-0 rounded-[28px] shadow-[0_0_0_9999px_rgba(0,0,0,0.48)] pointer-events-none" />
 
           {/* Frame border */}
-          <div className={`absolute inset-0 rounded-[28px] border-2 transition-colors duration-500 ${
-            phase === 'scanning' ? 'border-[#cdecae]/80' :
-            phase === 'done'     ? 'border-[#52ff00]/90' :
-            phase === 'error'    ? 'border-red-400/80'   :
-                                   'border-white/25'
-          }`} />
+          <div className={`absolute inset-0 rounded-[28px] border-2 transition-colors duration-500 ${phase === 'scanning' ? 'border-[#cdecae]/80' :
+              phase === 'done' ? 'border-[#52ff00]/90' :
+                phase === 'error' ? 'border-red-400/80' :
+                  'border-white/25'
+            }`} />
 
           {/* Corner reticles */}
-          {(['tl','tr','bl','br'] as const).map(c => (
+          {(['tl', 'tr', 'bl', 'br'] as const).map(c => (
             <div
               key={c}
-              className={`absolute w-7 h-7 animate-corner-glow ${
-                phase === 'done' ? 'border-[#52ff00]' : 'border-[#cdecae]'
-              } ${c === 'tl' ? 'top-0 left-0 border-t-[3px] border-l-[3px] rounded-tl-[28px]' :
+              className={`absolute w-7 h-7 animate-corner-glow ${phase === 'done' ? 'border-[#52ff00]' : 'border-[#cdecae]'
+                } ${c === 'tl' ? 'top-0 left-0 border-t-[3px] border-l-[3px] rounded-tl-[28px]' :
                   c === 'tr' ? 'top-0 right-0 border-t-[3px] border-r-[3px] rounded-tr-[28px]' :
-                  c === 'bl' ? 'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-[28px]' :
-                               'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-[28px]'}`}
+                    c === 'bl' ? 'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-[28px]' :
+                      'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-[28px]'}`}
             />
           ))}
 
@@ -494,86 +530,167 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
       </div>
 
       {/* ════════════════════════════════════════════════════════════════
-          RESULT CARD  (slides up after scan completes)
+          RESULT BOTTOM SHEET  (slides up & draggable/expandable)
           ════════════════════════════════════════════════════════════════ */}
       {phase === 'done' && result && (
-        <div className="relative z-20 animate-result-slide-up">
-          <div className="bg-[#0f1a0c]/95 backdrop-blur-xl border-t border-white/10 rounded-t-[32px] px-5 pt-5 pb-8">
-            {/* Drag handle */}
-            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+        <div className="fixed bottom-0 left-0 right-0 z-30 flex flex-col items-center pointer-events-auto animate-result-slide-up">
+          <div
+            className={`w-full max-w-2xl bg-[#0f1a0c]/95 backdrop-blur-2xl border-t border-white/15 rounded-t-[32px] flex flex-col overflow-hidden shadow-2xl transition-all duration-300 ease-out ${
+              isExpanded ? 'h-[88dvh] max-h-[88dvh]' : 'h-[42dvh] max-h-[42dvh]'
+            }`}
+          >
+            {/* ── Drag Header (Click or Drag up/down to toggle expanded state) ── */}
+            <div
+              onClick={handleHeaderClick}
+              onTouchStart={(e) => handleDragStart(e.touches[0].clientY)}
+              onTouchMove={(e) => handleDragMove(e.touches[0].clientY)}
+              onTouchEnd={(e) => handleDragEnd(e.changedTouches[0].clientY)}
+              onMouseDown={(e) => handleDragStart(e.clientY)}
+              onMouseMove={(e) => {
+                if (e.buttons === 1) handleDragMove(e.clientY);
+              }}
+              onMouseUp={(e) => handleDragEnd(e.clientY)}
+              className="px-5 pt-3 pb-3 shrink-0 cursor-pointer select-none touch-none bg-white/[0.02] border-b border-white/10 flex flex-col items-center hover:bg-white/[0.04] transition-colors"
+            >
+              {/* Drag Pill Handle */}
+              <div className="w-12 h-1.5 bg-white/30 rounded-full mb-1.5 hover:bg-white/50 transition-colors" />
 
-            {/* Result row */}
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 border border-white/10">
-                <img
-                  src={capturedFrame ?? result.image}
-                  alt={result.name}
-                  className="w-full h-full object-cover"
-                />
+              {/* Drag Prompt / Chevron indicator */}
+              <div className="flex items-center gap-1 text-[10px] font-semibold text-white/60 uppercase tracking-wider mb-2">
+                <span>{isExpanded ? 'Swipe down to collapse' : 'Swipe up or tap for full diagnosis'}</span>
+                {isExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-[#8ba870]" />
+                ) : (
+                  <ChevronUp className="w-3.5 h-3.5 text-[#8ba870] animate-bounce" />
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${SEVERITY_COLOR[result.severity] ?? 'bg-white/20 text-white'}`}>
-                    {result.severity} Risk
-                  </span>
-                  <span className="text-[10px] font-semibold text-[#cdecae]">
-                    {result.confidenceScore ?? 92}% match
-                  </span>
-                  {diagnosisSource && (
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                      diagnosisSource === 'federated_ml'
-                        ? 'bg-purple-500/20 text-purple-300'
-                        : 'bg-blue-500/20 text-blue-300'
-                    }`}>
-                      {diagnosisSource === 'federated_ml' ? '🧠 ML' : diagnosisSource === 'gemini_edge' || diagnosisSource === 'gemini_client' ? '✨ Gemini' : ''}
-                    </span>
-                  )}
+
+              {/* Result Summary Row */}
+              <div className="w-full flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 border border-white/10 shadow-md">
+                  <img
+                    src={capturedFrame ?? result.image}
+                    alt={result.name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-                <h3 className="font-bold text-white text-base leading-tight truncate">{result.name}</h3>
-                <p className="text-xs text-white/55 truncate mt-0.5">{result.commonName}</p>
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${SEVERITY_COLOR[result.severity] ?? 'bg-white/20 text-white'}`}>
+                      {result.severity} Risk
+                    </span>
+                    <span className="text-[10px] font-semibold text-[#cdecae]">
+                      {result.confidenceScore ?? 92}% match
+                    </span>
+                    {diagnosisSource && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                        diagnosisSource === 'federated_ml'
+                          ? 'bg-purple-500/20 text-purple-300'
+                          : 'bg-blue-500/20 text-blue-300'
+                      }`}>
+                        {diagnosisSource === 'federated_ml' ? '🧠 ML' : diagnosisSource === 'gemini_edge' || diagnosisSource === 'gemini_client' ? '✨ Gemini' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-bold text-white text-base leading-tight truncate">{result.name}</h3>
+                  <p className="text-xs text-white/55 truncate mt-0.5">{result.commonName}</p>
+                </div>
               </div>
             </div>
 
-            {/* Top cause */}
-            {result.causes[0] && (
-              <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-start gap-3 mb-4">
-                <FlaskConical className="w-4 h-4 text-[#8ba870] shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-white/80">{result.causes[0].title}</p>
-                  <p className="text-[11px] text-white/50 mt-0.5 leading-relaxed">{result.causes[0].subtitle}</p>
+            {/* ── Scrollable Body Content (Touch Pan Y enabled) ── */}
+            <div className="overflow-y-auto overscroll-contain touch-pan-y flex-1 px-5 pt-4 pb-[max(2.5rem,env(safe-area-inset-bottom))] space-y-4">
+              
+              {/* Disease Description */}
+              {result.description && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5">
+                  <h4 className="text-xs font-bold text-white/90 mb-1 flex items-center gap-1.5">
+                    <Leaf className="w-3.5 h-3.5 text-[#8ba870]" /> Disease Overview
+                  </h4>
+                  <p className="text-xs text-white/70 leading-relaxed">{result.description}</p>
+                  {result.secondaryDescription && (
+                    <p className="text-xs text-white/50 leading-relaxed mt-2 pt-2 border-t border-white/10">
+                      {result.secondaryDescription}
+                    </p>
+                  )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Grad-CAM heatmap (federated ML only) */}
-            {gradcamBase64 && (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Brain className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="text-[11px] font-semibold text-white/70">Disease Region Analysis (Grad-CAM)</span>
+              {/* Key Causes */}
+              {result.causes && result.causes.length > 0 && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5">
+                  <h4 className="text-xs font-bold text-white/90 mb-2 flex items-center gap-1.5">
+                    <FlaskConical className="w-3.5 h-3.5 text-[#8ba870]" /> Causes & Identifying Factors
+                  </h4>
+                  <div className="space-y-2">
+                    {result.causes.map((cause, idx) => (
+                      <div key={idx} className="bg-white/5 rounded-xl p-2.5 flex items-start gap-2.5">
+                        <div className="w-2 h-2 rounded-full bg-[#8ba870] shrink-0 mt-1.5" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-white/80">{cause.title}</p>
+                          <p className="text-[11px] text-white/50 leading-relaxed mt-0.5">{cause.subtitle}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <img
-                  src={`data:image/png;base64,${gradcamBase64}`}
-                  alt="Grad-CAM heatmap"
-                  className="w-full rounded-xl border border-white/10"
-                />
-              </div>
-            )}
+              )}
 
-            {/* Action buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={resetToLive}
-                className="flex-1 py-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95"
-              >
-                <RotateCcw className="w-4 h-4" /> Scan Again
-              </button>
-              <button
-                onClick={handleViewDiagnosis}
-                className="flex-[2] py-3.5 rounded-2xl bg-[#4c6635] hover:bg-[#3d5229] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95 shadow-lg shadow-[#4c6635]/40"
-              >
-                View Full Report <ChevronRight className="w-4 h-4" />
-              </button>
+              {/* Grad-CAM Heatmap (Federated ML) */}
+              {gradcamBase64 && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Brain className="w-4 h-4 text-purple-400 shrink-0" />
+                    <span className="text-xs font-bold text-white/90">Disease Region Analysis (Grad-CAM)</span>
+                  </div>
+                  <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/40 flex justify-center p-2">
+                    <img
+                      src={`data:image/png;base64,${gradcamBase64}`}
+                      alt="Grad-CAM heatmap"
+                      className="max-h-60 w-full object-contain rounded-lg"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Treatment & Care Steps */}
+              {result.treatmentSteps && result.treatmentSteps.length > 0 && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5">
+                  <h4 className="text-xs font-bold text-white/90 mb-2 flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5 text-[#8ba870]" /> Recommended Treatment Steps
+                  </h4>
+                  <div className="space-y-2">
+                    {result.treatmentSteps.map((stepItem, idx) => (
+                      <div key={idx} className="bg-white/5 rounded-xl p-2.5 flex items-start gap-3">
+                        <span className="w-5 h-5 rounded-full bg-[#4c6635] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {stepItem.step || idx + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-white/90">{stepItem.title}</p>
+                          <p className="text-[11px] text-white/60 leading-relaxed mt-0.5">{stepItem.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={resetToLive}
+                  className="flex-1 py-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95"
+                >
+                  <RotateCcw className="w-4 h-4" /> Scan Again
+                </button>
+                <button
+                  onClick={handleViewDiagnosis}
+                  className="flex-[2] py-3.5 rounded-2xl bg-[#4c6635] hover:bg-[#3d5229] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors active:scale-95 shadow-lg shadow-[#4c6635]/40"
+                >
+                  View Full Report <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
@@ -611,9 +728,8 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
                   }`}
               >
                 {/* Outer ring */}
-                <div className={`absolute inset-0 rounded-full border-[3px] transition-colors duration-300 ${
-                  phase === 'scanning' ? 'border-[#cdecae]/60' : 'border-white/60'
-                }`} />
+                <div className={`absolute inset-0 rounded-full border-[3px] transition-colors duration-300 ${phase === 'scanning' ? 'border-[#cdecae]/60' : 'border-white/60'
+                  }`} />
 
                 {/* Ripple when scanning */}
                 {phase === 'scanning' && (
@@ -624,20 +740,18 @@ export const ScanCamera: React.FC<ScanCameraProps> = ({ setScreen, onDiagnose, u
                 )}
 
                 {/* Inner disc */}
-                <div className={`w-[60px] h-[60px] rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
-                  phase === 'scanning'
+                <div className={`w-[60px] h-[60px] rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${phase === 'scanning'
                     ? 'bg-[#8ba870] scale-90'
                     : 'bg-white hover:bg-[#f0f0f0]'
-                }`}>
+                  }`}>
                   {phase === 'scanning'
                     ? <Loader2 className="w-7 h-7 animate-spin text-white" />
                     : <Leaf className="w-7 h-7 text-[#4c6635]" />
                   }
                 </div>
               </button>
-              <span className={`text-[11px] font-semibold transition-colors ${
-                phase === 'scanning' ? 'text-[#cdecae]' : 'text-white/80'
-              }`}>
+              <span className={`text-[11px] font-semibold transition-colors ${phase === 'scanning' ? 'text-[#cdecae]' : 'text-white/80'
+                }`}>
                 {phase === 'scanning' ? 'Analysing…' : 'Scan'}
               </span>
             </div>

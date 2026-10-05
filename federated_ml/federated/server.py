@@ -61,6 +61,7 @@ class FederatedServer:
         num_clients: int,
         algorithm: str = "fedscaffold",
         device: Optional[torch.device] = None,
+        class_names: Optional[List[str]] = None,
     ):
         """
         Args:
@@ -68,11 +69,13 @@ class FederatedServer:
             num_clients: Total number of federated clients.
             algorithm: "fedavg" or "fedscaffold".
             device: Torch device.
+            class_names: List of class names (saved into every checkpoint).
         """
         self.model_fn = model_fn
         self.num_clients = num_clients
         self.algorithm = algorithm.lower()
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.class_names: List[str] = class_names or []
 
         # Initialize global model
         self.global_model = model_fn()
@@ -279,6 +282,8 @@ class FederatedServer:
             "algorithm": self.algorithm,
             "model_state_dict": self.global_state,
             "num_clients": self.num_clients,
+            "num_classes": len(self.class_names),
+            "class_names": self.class_names,
         }
 
         if self.scaffold_state is not None:
@@ -286,28 +291,41 @@ class FederatedServer:
             checkpoint["scaffold_client_controls"] = self.scaffold_state.client_controls
 
         torch.save(checkpoint, path)
-        logger.info(f"Checkpoint saved: {path}")
+        logger.info(f"[ML CHECKPOINT] Saved: {path} (classes={self.class_names})")
 
     def save_final_model(self):
-        """Save the final global model."""
+        """Save the final global model (with class info for inference)."""
         path = final_checkpoint_path(self.algorithm)
         CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-        torch.save({
+
+        payload = {
             "model_state_dict": self.global_state,
             "algorithm": self.algorithm,
             "round": self.current_round,
             "num_clients": self.num_clients,
-        }, path)
+            "num_classes": len(self.class_names),
+            "class_names": self.class_names,
+        }
+        torch.save(payload, path)
 
-        # Also save as the canonical "global_final.pt"
+        # Also save as the canonical "global_final.pt" (loaded by inference.py)
         canonical = CHECKPOINT_DIR / "global_final.pt"
-        torch.save({
-            "model_state_dict": self.global_state,
-            "algorithm": self.algorithm,
-            "round": self.current_round,
-        }, canonical)
+        torch.save(payload, canonical)
 
-        logger.info(f"Final model saved: {path} + {canonical}")
+        # Save human-readable class mapping JSON
+        import json
+        class_map = {name: i for i, name in enumerate(self.class_names)}
+        class_map_path = CHECKPOINT_DIR / "class_to_index.json"
+        with open(class_map_path, "w", encoding="utf-8") as f:
+            json.dump(class_map, f, indent=2)
+
+        logger.info(
+            f"[ML CHECKPOINT] Final model saved: {path}\n"
+            f"  canonical: {canonical}\n"
+            f"  class map: {class_map_path}\n"
+            f"  num_classes: {len(self.class_names)}\n"
+            f"  class_names: {self.class_names}"
+        )
 
     def save_metrics(self):
         """Save round metrics to JSON."""

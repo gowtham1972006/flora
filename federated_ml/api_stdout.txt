@@ -1,0 +1,20 @@
+
+==================================================
+MODEL CHECK:
+  architecture = EfficientNetB0
+  checkpoint   = D:\flora\federated_ml\checkpoints\global_final.pt
+  classes      = 5  ['Chlorosis', 'Healthy', 'Powdery_Mildew', 'Rust', 'Wilting']
+  checkpoint loaded = YES
+==================================================
+
+
+🌿 FloraVeda ML Inference API
+   Host: 0.0.0.0:5000
+   Model: loaded ✓
+   Endpoints:
+     GET  /health
+     GET  /classes
+     POST /predict
+
+ * Serving Flask app 'inference'
+ * Debug mode: off

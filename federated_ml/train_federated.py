@@ -141,6 +141,7 @@ def main():
         num_clients=args.num_clients,
         algorithm=args.algorithm,
         device=device,
+        class_names=class_names,
     )
 
     # ── Create client dataloaders ──────────────────────────────────────────────

@@ -3,108 +3,180 @@
     "round": 1,
     "algorithm": "fedscaffold",
     "num_clients_participated": 4,
-    "avg_client_loss": 1.5814750517175,
-    "avg_client_accuracy": 0.22674843601251188,
-    "round_time_seconds": 0.798851490020752,
+    "avg_client_loss": 1.4719124790401805,
+    "avg_client_accuracy": 0.41249036674373274,
+    "round_time_seconds": 0.4288904666900635,
     "client_metrics": [
       {
         "client_id": 0,
-        "loss": 1.5587419132853664,
-        "accuracy": 0.27906976744186046,
+        "loss": 1.525243187135504,
+        "accuracy": 0.35658914728682173,
         "num_samples": 43
       },
       {
         "client_id": 1,
-        "loss": 1.6385414600372314,
-        "accuracy": 0.1111111111111111,
+        "loss": 1.5923027594884236,
+        "accuracy": 0.2222222222222222,
         "num_samples": 9
       },
       {
         "client_id": 2,
-        "loss": 1.546498507784124,
-        "accuracy": 0.2807017543859649,
+        "loss": 1.4275430866152223,
+        "accuracy": 0.49707602339181284,
         "num_samples": 57
       },
       {
         "client_id": 3,
-        "loss": 1.5821183257632785,
-        "accuracy": 0.2361111111111111,
+        "loss": 1.342560882921572,
+        "accuracy": 0.5740740740740741,
         "num_samples": 72
       }
     ],
-    "val_loss": 1.5978275537490845,
+    "val_loss": 1.5656613864396747,
     "val_accuracy": 0.21052631578947367
   },
   {
     "round": 2,
     "algorithm": "fedscaffold",
     "num_clients_participated": 4,
-    "avg_client_loss": 1.5844612508043536,
-    "avg_client_accuracy": 0.2570039439684482,
-    "round_time_seconds": 0.9218380451202393,
+    "avg_client_loss": 1.930680288423669,
+    "avg_client_accuracy": 0.2440514642549526,
+    "round_time_seconds": 0.5055549144744873,
     "client_metrics": [
       {
         "client_id": 0,
-        "loss": 1.6058528728263324,
-        "accuracy": 0.20930232558139536,
+        "loss": 1.6853802324265472,
+        "accuracy": 0.1937984496124031,
         "num_samples": 43
       },
       {
         "client_id": 1,
-        "loss": 1.5580610036849976,
-        "accuracy": 0.3333333333333333,
+        "loss": 1.4976181189219158,
+        "accuracy": 0.4074074074074074,
         "num_samples": 9
       },
       {
         "client_id": 2,
-        "loss": 1.5707012728640908,
-        "accuracy": 0.2631578947368421,
+        "loss": 1.8160527833023963,
+        "accuracy": 0.2222222222222222,
         "num_samples": 57
       },
       {
         "client_id": 3,
-        "loss": 1.6032298538419936,
-        "accuracy": 0.2222222222222222,
+        "loss": 2.7236700190438166,
+        "accuracy": 0.1527777777777778,
         "num_samples": 72
       }
     ],
-    "val_loss": 1.5991877317428589,
-    "val_accuracy": 0.15789473684210525
+    "val_loss": 1.6119074068571393,
+    "val_accuracy": 0.2631578947368421
   },
   {
     "round": 3,
     "algorithm": "fedscaffold",
     "num_clients_participated": 4,
-    "avg_client_loss": 1.5677304891814963,
-    "avg_client_accuracy": 0.31672871617027065,
-    "round_time_seconds": 0.9888720512390137,
+    "avg_client_loss": 1.1549145270632442,
+    "avg_client_accuracy": 0.6890583208667664,
+    "round_time_seconds": 0.4229261875152588,
     "client_metrics": [
       {
         "client_id": 0,
-        "loss": 1.5856198072433472,
-        "accuracy": 0.23255813953488372,
+        "loss": 1.0224054386449415,
+        "accuracy": 0.7674418604651163,
         "num_samples": 43
       },
       {
         "client_id": 1,
-        "loss": 1.5467783212661743,
-        "accuracy": 0.4444444444444444,
+        "loss": 1.2967598835627239,
+        "accuracy": 0.6666666666666666,
         "num_samples": 9
       },
       {
         "client_id": 2,
-        "loss": 1.550101357593871,
-        "accuracy": 0.2982456140350877,
+        "loss": 1.309059769089459,
+        "accuracy": 0.5906432748538012,
         "num_samples": 57
       },
       {
         "client_id": 3,
-        "loss": 1.5884224706225925,
-        "accuracy": 0.2916666666666667,
+        "loss": 0.9914330169558525,
+        "accuracy": 0.7314814814814815,
         "num_samples": 72
       }
     ],
-    "val_loss": 1.5921523571014404,
-    "val_accuracy": 0.10526315789473684
+    "val_loss": 1.3055646795975535,
+    "val_accuracy": 0.5263157894736842
+  },
+  {
+    "round": 4,
+    "algorithm": "fedscaffold",
+    "num_clients_participated": 4,
+    "avg_client_loss": 9.643877271560957,
+    "avg_client_accuracy": 0.1359918287320368,
+    "round_time_seconds": 0.38544797897338867,
+    "client_metrics": [
+      {
+        "client_id": 0,
+        "loss": 5.116249001303385,
+        "accuracy": 0.023255813953488372,
+        "num_samples": 43
+      },
+      {
+        "client_id": 1,
+        "loss": 1.7008254528045654,
+        "accuracy": 0.2222222222222222,
+        "num_samples": 9
+      },
+      {
+        "client_id": 2,
+        "loss": 9.772390348869457,
+        "accuracy": 0.09941520467836257,
+        "num_samples": 57
+      },
+      {
+        "client_id": 3,
+        "loss": 21.98604428326642,
+        "accuracy": 0.19907407407407407,
+        "num_samples": 72
+      }
+    ],
+    "val_loss": 3.0770949815448962,
+    "val_accuracy": 0.47368421052631576
+  },
+  {
+    "round": 5,
+    "algorithm": "fedscaffold",
+    "num_clients_participated": 4,
+    "avg_client_loss": 4.576214357951167,
+    "avg_client_accuracy": 0.762181819212113,
+    "round_time_seconds": 0.42742156982421875,
+    "client_metrics": [
+      {
+        "client_id": 0,
+        "loss": 0.852276204630386,
+        "accuracy": 0.875968992248062,
+        "num_samples": 43
+      },
+      {
+        "client_id": 1,
+        "loss": 2.2963503201802573,
+        "accuracy": 0.7407407407407407,
+        "num_samples": 9
+      },
+      {
+        "client_id": 2,
+        "loss": 6.544726617155019,
+        "accuracy": 0.695906432748538,
+        "num_samples": 57
+      },
+      {
+        "client_id": 3,
+        "loss": 8.611504289839003,
+        "accuracy": 0.7361111111111112,
+        "num_samples": 72
+      }
+    ],
+    "val_loss": 5.554646241815614,
+    "val_accuracy": 0.5263157894736842
   }
 ]

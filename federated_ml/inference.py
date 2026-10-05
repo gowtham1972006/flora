@@ -51,11 +51,18 @@ model_loaded = False
 
 
 def load_model(model_path: Path) -> bool:
-    """Load the trained global model."""
+    """Load the trained global model with full diagnostic logging."""
     global model, class_names, device, model_loaded
 
+    print("\n" + "=" * 50)
+    print("MODEL CHECK:")
+    print(f"  architecture = EfficientNetB0")
+    print(f"  checkpoint   = {model_path}")
+
     if not model_path.exists():
-        logger.warning(f"Model not found: {model_path}")
+        print(f"  checkpoint loaded = NO  (file not found)")
+        print("=" * 50 + "\n")
+        logger.warning(f"[ML CHECKPOINT] Model not found: {model_path}")
         return False
 
     try:
@@ -64,6 +71,14 @@ def load_model(model_path: Path) -> bool:
 
         num_classes = checkpoint.get("num_classes", 5)
         class_names = checkpoint.get("class_names", [f"Class_{i}" for i in range(num_classes)])
+
+        # Ensure num_classes matches class_names length
+        if len(class_names) != num_classes:
+            logger.warning(
+                f"[ML CHECKPOINT] Mismatch: num_classes={num_classes} but "
+                f"class_names has {len(class_names)} entries. Using class_names length."
+            )
+            num_classes = len(class_names)
 
         model = create_model(
             num_classes=num_classes,
@@ -75,10 +90,28 @@ def load_model(model_path: Path) -> bool:
         model.eval()
         model_loaded = True
 
-        logger.info(f"Model loaded: {model_path} ({num_classes} classes)")
+        # Save class_to_index.json for external tools
+        import json
+        class_map = {name: i for i, name in enumerate(class_names)}
+        class_map_path = CHECKPOINT_DIR / "class_to_index.json"
+        CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+        with open(class_map_path, "w", encoding="utf-8") as f:
+            json.dump(class_map, f, indent=2)
+
+        print(f"  classes      = {num_classes}  {class_names}")
+        print(f"  checkpoint loaded = YES")
+        print("=" * 50 + "\n")
+
+        logger.info(
+            f"[ML CHECKPOINT] Model loaded from {model_path} | "
+            f"classes={num_classes} | device={device}"
+        )
         return True
+
     except Exception as e:
-        logger.error(f"Failed to load model: {e}")
+        print(f"  checkpoint loaded = NO  (error: {e})")
+        print("=" * 50 + "\n")
+        logger.error(f"[ML CHECKPOINT] Failed to load model: {e}")
         return False
 
 
@@ -92,18 +125,29 @@ def predict_from_base64(image_b64: str, include_gradcam: bool = True) -> dict:
     if not model_loaded:
         return {"error": "Model not loaded", "status": "unavailable"}
 
+    logger.info("[ML INFERENCE] Received prediction request")
+
     try:
         # Decode base64
+        logger.info("[ML PREPROCESS] Decoding base64 image...")
         image_data = base64.b64decode(image_b64)
         img = Image.open(io.BytesIO(image_data)).convert("RGB")
+        logger.info(f"[ML PREPROCESS] Decoded image: {img.size[0]}×{img.size[1]} {img.mode}")
     except Exception as e:
         return {"error": f"Invalid image data: {e}"}
 
-    # Preprocess
+    # Deterministic inference preprocessing (no augmentation)
+    logger.info("[ML PREPROCESS] Applying eval transform (resize→crop→normalize, no augmentation)...")
     eval_transform = get_eval_transform()
     input_tensor = eval_transform(img).unsqueeze(0)
+    logger.info(
+        f"[ML PREPROCESS] Tensor shape={tuple(input_tensor.shape)}, "
+        f"dtype={input_tensor.dtype}, "
+        f"min={input_tensor.min():.3f}, max={input_tensor.max():.3f}"
+    )
 
     # Predict
+    logger.info("[ML MODEL] Running forward pass through EfficientNetB0...")
     with torch.no_grad():
         input_tensor_dev = input_tensor.to(device)
         logits = model(input_tensor_dev)
@@ -113,6 +157,11 @@ def predict_from_base64(image_b64: str, include_gradcam: bool = True) -> dict:
     pred_idx = predicted.item()
     pred_confidence = confidence.item()
     pred_class = class_names[pred_idx] if pred_idx < len(class_names) else f"Class_{pred_idx}"
+
+    logger.info(
+        f"[ML MODEL] Prediction: {pred_class} (idx={pred_idx}) "
+        f"confidence={pred_confidence*100:.1f}%"
+    )
 
     result = {
         "predicted_class": pred_class,
@@ -126,6 +175,7 @@ def predict_from_base64(image_b64: str, include_gradcam: bool = True) -> dict:
 
     # Grad-CAM
     if include_gradcam:
+        logger.info("[ML GRADCAM] Generating Grad-CAM overlay...")
         try:
             overlay, _, _, _ = generate_gradcam_overlay(
                 model=model,
@@ -135,11 +185,14 @@ def predict_from_base64(image_b64: str, include_gradcam: bool = True) -> dict:
                 alpha=0.4,
             )
             result["gradcam_base64"] = gradcam_to_base64(overlay)
+            logger.info("[ML GRADCAM] Grad-CAM generated successfully")
         except Exception as e:
-            logger.warning(f"Grad-CAM failed: {e}")
+            logger.warning(f"[ML GRADCAM] Failed: {e}")
             result["gradcam_base64"] = None
 
+    logger.info("[ML INFERENCE] Prediction complete")
     return result
+
 
 
 def create_app():

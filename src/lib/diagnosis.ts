@@ -181,9 +181,11 @@ async function runFederatedMLInference(
       'wilting': 'wilting',
       'rust': 'rust',
       'powdery-mildew': 'powdery-mildew',
-      'healthy': 'chlorosis',
+      // 'healthy' is NOT mapped to a disease — fetch by its real name and
+      // fall back to chlorosis only if entry truly doesn't exist
+      'healthy': 'healthy',
     };
-    const diseaseId = diseaseIdMap[classNameLower] ?? 'chlorosis';
+    const diseaseId = diseaseIdMap[classNameLower] ?? classNameLower;
 
     const disease = await fetchDiseaseById(diseaseId);
     if (!disease) return null;

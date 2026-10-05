@@ -98,6 +98,10 @@ class FederatedClient:
             for k, v in global_model_state.items()
         }
 
+        # Log initial weight norm for verification
+        init_norm = sum(v.float().norm().item() for v in global_weights.values())
+        logger.info(f"[ML CLIENT] Client {self.client_id} — weight norm BEFORE training: {init_norm:.4f}")
+
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.SGD(
             model.parameters(),
@@ -147,9 +151,18 @@ class FederatedClient:
         avg_loss = total_loss / total_samples if total_samples > 0 else 0
         avg_accuracy = total_correct / total_samples if total_samples > 0 else 0
 
-        # Compute model delta: global_weights - local_weights
-        # This is what gets sent to the server (NOT the images)
+        # Log weight norm AFTER training — must differ from before to confirm training works
         local_state = model.state_dict()
+        post_norm = sum(v.float().norm().item() for v in local_state.values())
+        logger.info(
+            f"[ML CLIENT] Client {self.client_id} — weight norm AFTER training: {post_norm:.4f} "
+            f"(delta norm = {abs(post_norm - init_norm):.4f})"
+        )
+        if abs(post_norm - init_norm) < 1e-6:
+            logger.warning(
+                f"[ML CLIENT] WARNING: Client {self.client_id} weights did NOT change! "
+                f"Check learning rate / data / gradient flow."
+            )
         model_delta = {}
         for key in global_weights:
             model_delta[key] = (
